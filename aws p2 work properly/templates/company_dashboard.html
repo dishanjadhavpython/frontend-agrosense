@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Company Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <div class="dashboard">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <div class="logo small">PM Internship</div>
+        <button class="nav-toggle side-toggle" id="sideToggle" type="button">☰</button>
+      </div>
+
+      <button class="side-link active" data-tab="postTab" type="button">Post Internship</button>
+      <button class="side-link" data-tab="manageTab" type="button">Manage Openings</button>
+      <a class="side-link logout" href="{{ url_for('logout') }}">Logout</a>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h2>Company Portal</h2>
+          <p class="muted">Post roles. Discover talent. Send offers faster.</p>
+        </div>
+        <div class="pill">PM Internship Duration: <b>12 Months</b></div>
+      </div>
+
+      <!-- ✅ POST TAB -->
+      <section class="tab active" id="postTab">
+        <div class="card">
+          <h3>Post a New Opening</h3>
+          <p class="muted tiny">Fill details carefully. The system will rank best candidates automatically.</p>
+
+          <form class="grid-form" method="POST" action="{{ url_for('company_post_internship') }}">
+            <div>
+              <label>Company Name (Display)</label>
+              <input name="company_name" required placeholder="e.g., AlphaTech Pvt Ltd"/>
+            </div>
+
+            <div>
+              <label>Field / Sector</label>
+              <select name="sector" required>
+                <option>IT</option>
+                <option>Finance</option>
+                <option>Manufacturing</option>
+                <option>Healthcare</option>
+                <option>Education</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Role</label>
+              <input name="role" required placeholder="e.g., Data Analyst Intern"/>
+            </div>
+
+            <div>
+              <label>Required Skills (comma separated)</label>
+              <input name="skills" required placeholder="e.g., python, excel, sql"/>
+            </div>
+
+            <div>
+              <label>Seats</label>
+              <input name="seats" type="number" min="1" required placeholder="e.g., 5"/>
+            </div>
+
+            <div>
+              <label>Stipend (optional)</label>
+              <input name="stipend" placeholder="e.g., 5000"/>
+            </div>
+
+            <div>
+              <label>Mode</label>
+              <select name="mode" required>
+                <option value="remote">Remote</option>
+                <option value="hybrid">Hybrid</option>
+                <option value="onsite">Onsite</option>
+              </select>
+            </div>
+
+            <div>
+              <label>Location</label>
+              <input name="location" required placeholder="City / State"/>
+            </div>
+
+            <div>
+              <label>Minimum GPA</label>
+              <input name="min_gpa" type="number" step="0.01" min="0" max="10" required placeholder="e.g., 7.0"/>
+            </div>
+
+            <div class="full-row">
+              <button class="btn btn-primary full" type="submit">
+                Publish Opening →
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- ✅ MANAGE TAB -->
+      <section class="tab" id="manageTab">
+        <div class="card">
+          <h3>Manage Openings</h3>
+          <p class="muted tiny">Track posted internships and allocation progress.</p>
+
+          <div class="list-wrap">
+            {% if internships and internships|length > 0 %}
+              {% for item in internships %}
+                {% set i = item["internship"] %}
+                {% set app = item["application"] %}
+
+                <div class="list-card">
+                  <div>
+                    <h4>{{ i["role_title"] }}</h4>
+                    <p>
+                      {{ i["sector"] }} • Seats Left: {{ i["seats"] }} • {{ i["mode"]|capitalize }} • {{ i["location"] }}
+                    </p>
+
+                    {% if not app %}
+                      <p class="muted tiny">Waiting for admin allocation</p>
+                    {% elif app["status"] == "allocated" %}
+                      <p class="muted tiny">Candidate Allocated (Offer Pending)</p>
+                    {% elif app["status"] == "successful" %}
+                      <p class="muted tiny">Offer Given Successfully</p>
+                    {% else %}
+                      <p class="muted tiny">Status: {{ app["status"] }}</p>
+                    {% endif %}
+                  </div>
+
+                  {% if app and app["status"] == "allocated" %}
+                    <a class="btn btn-outline" href="{{ url_for('company_view_candidate', internship_id=i['id']) }}">View Candidate</a>
+                  {% elif app and app["status"] == "successful" %}
+                    <span class="status-pill done">Completed</span>
+                  {% else %}
+                    <span class="status-pill pending">Pending</span>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="list-card">
+                <div>
+                  <h4>No openings posted yet</h4>
+                  <p>Post an internship and it will appear here.</p>
+                </div>
+              </div>
+            {% endif %}
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

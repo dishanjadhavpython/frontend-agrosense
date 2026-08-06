@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <div class="dashboard">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <div class="logo small">PM Internship</div>
+        <button class="nav-toggle side-toggle" id="sideToggle" type="button">☰</button>
+      </div>
+
+      <button class="side-link active" data-tab="postingsTab" type="button">Internship Postings</button>
+      <a class="side-link logout" href="{{ url_for('logout') }}">Logout</a>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <h2>Authorizer Dashboard</h2>
+          <p class="muted">Review ranked applicants and approve allocations based on scoring + scheme rules.</p>
+        </div>
+        <div class="pill">Pending Applications: <b>{{ pending_count }}</b></div>
+      </div>
+
+      <section class="tab active" id="postingsTab">
+        <div class="card">
+          <h3>System Overview</h3>
+          <p class="muted tiny">A quick snapshot of allocation progress.</p>
+
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <h4>Allocated</h4>
+              <p>{{ allocated_count }}</p>
+            </div>
+
+            <div class="kpi-card">
+              <h4>Successful Offers</h4>
+              <p>{{ successful_count }}</p>
+            </div>
+
+            <div class="kpi-card">
+              <h4>Pending</h4>
+              <p>{{ pending_count }}</p>
+            </div>
+          </div>
+
+          <div class="kpi-grid" style="margin-top:14px;">
+            <div class="kpi-card">
+              <h4>Rural Allocated</h4>
+              <p>{{ rural_allocated }}</p>
+            </div>
+
+            <div class="kpi-card">
+              <h4>Aspirational Allocated</h4>
+              <p>{{ aspirational_allocated }}</p>
+            </div>
+
+            <div class="kpi-card">
+              <h4>System Status</h4>
+              <span class="status-pill live">Live</span>
+            </div>
+          </div>
+
+          <div class="section" style="margin-top:18px;">
+            <h3>Internship Postings</h3>
+            <p class="muted tiny">Click “View Ranked Applicants” to review candidates for that opening.</p>
+
+            <div class="list-wrap">
+              {% if internships and internships|length > 0 %}
+                {% for i in internships %}
+                  <div class="list-card">
+                    <div>
+                      <h4>{{ i["company_name"] }} — {{ i["role_title"] }}</h4>
+                      <p>
+                        Seats Left: {{ i["seats"] }} • {{ i["mode"] }} • {{ i["location"] }}
+                      </p>
+                    </div>
+
+                    <a class="btn btn-outline" href="{{ url_for('admin_view_matches', internship_id=i['id']) }}">
+                      View Ranked Applicants
+                    </a>
+                  </div>
+                {% endfor %}
+              {% else %}
+                <div class="list-card">
+                  <div>
+                    <h4>No internship postings yet</h4>
+                    <p>Company openings will appear here once posted.</p>
+                  </div>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

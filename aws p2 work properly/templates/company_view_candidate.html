@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Allocated Candidate</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="container">
+  <a class="btn btn-outline small" href="{{ url_for('company_dashboard') }}">⬅ Back</a>
+
+  <div class="card" style="margin-top:14px;">
+    <h2>{{ internship["role_title"] }}</h2>
+    <p class="muted tiny">Location: {{ internship["location"] }} • Mode: {{ internship["mode"] }}</p>
+  </div>
+
+  <div class="card" style="margin-top:14px;">
+    <h3>Allocated Candidate</h3>
+    <p class="muted tiny">Candidate details are shown. Match score remains hidden from company side.</p>
+
+    {% if seeker %}
+      <div class="grid2" style="margin-top:12px;">
+        <div class="card hover-soft">
+          <h3>Profile</h3>
+          <p><b>Name:</b> {{ seeker["name"] }}</p>
+          <p><b>Age:</b> {{ seeker["age"] }}</p>
+          <p><b>Phone:</b> {{ seeker["phone"] }}</p>
+          <p><b>Skills:</b> {{ seeker["skills"] }}</p>
+        </div>
+
+        <div class="card hover-soft">
+          <h3>Academics</h3>
+          <p><b>GPA:</b> {{ seeker["gpa"] }}</p>
+          <p><b>Degree:</b> {{ seeker["degree"] }} ({{ seeker["branch"] }})</p>
+          <p><b>Sector Interest:</b> {{ seeker["sector_interest"] }}</p>
+          <p><b>Preferred Mode:</b> {{ seeker["preferred_mode"] }}</p>
+        </div>
+      </div>
+
+      <form method="POST" action="{{ url_for('company_give_offer') }}" style="margin-top:14px;">
+        <input type="hidden" name="internship_id" value="{{ internship['id'] }}">
+        <input type="hidden" name="seeker_user_id" value="{{ seeker['user_id'] }}">
+        <button class="btn btn-primary full" type="submit">Send Offer →</button>
+      </form>
+
+    {% else %}
+      <p class="muted">Candidate profile not found.</p>
+    {% endif %}
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
+

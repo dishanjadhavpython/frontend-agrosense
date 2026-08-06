@@ -1,0 +1,27 @@
+# The reading service. Deliberately small — everything here is needed to get
+# twelve numbers off a Soil Health Card and index the document for retrieval.
+#
+# Nothing in `_unwired/` is covered by this file (torch, pandas, boto3,
+# openai-agents). Adding them back is a decision, not an install.
+#
+# Verified to resolve as arm64 wheels on the project's Python 3.14 venv.
+
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.34,<1.0
+python-multipart>=0.0.20         # FastAPI multipart uploads
+
+PyMuPDF>=1.26,<2.0               # PDF text extraction and page rasterising
+numpy>=2.0,<3.0
+scikit-learn>=1.5,<2.0           # HashingVectorizer / TfidfVectorizer
+
+Pillow>=11.0,<13.0               # image decode + pre-OCR grayscale/autocontrast
+pytesseract>=0.3.13,<1.0         # needs the `tesseract` binary on PATH
+
+# HEIC support is OPTIONAL and deliberately not installed by default: the wheel
+# builds against libheif, which is a system package, and it fails on Python 3.14
+# without it. iOS Safari transcodes HEIC to JPEG for ordinary file uploads, so
+# this only matters for a file dragged straight off a Mac's Photos library.
+# To enable:  brew install libheif && pip install pillow-heif
+# `ingest.py` detects it at import and returns a clear error when it is absent.
+
+httpx>=0.27,<1.0                 # Ollama client (optional answer path)

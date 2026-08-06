@@ -1,0 +1,539 @@
+@import "tailwindcss";
+
+/* Dark mode is an explicit attribute on <html>, never a media query — the
+   toggle has to be able to override the OS, and light is the default here
+   (PLAN.md §11). `:where()` keeps specificity at 0 so utilities still win. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Camera capture and drag-and-drop are device facts, not preferences: a phone
+   has a camera and no drag, a laptop is usually the reverse. Decided in CSS
+   because the server cannot know which is coming, and branching markup on
+   something only the client can see is what breaks hydration (PLAN.md §9). */
+@custom-variant touch (@media (pointer: coarse));
+@custom-variant mouse (@media (pointer: fine));
+
+/* ============================================================
+   REGUR — the AgroSense design system
+   Named for the black cotton soil of the Deccan plateau.
+   Every value is drawn from the world this product lives in.
+   ============================================================ */
+
+@theme {
+  /* --- Earth: regur, the black cotton soil. Text and dark surfaces. --- */
+  --color-ink: #14201a;
+  --color-ink-soft: #3d4b42;
+  --color-ink-mute: #52605a;
+
+  /* --- Leaf: standing jowar and sugarcane. Primary, and "sufficient". --- */
+  --color-leaf: #2a6f4e;
+  --color-leaf-deep: #16402e;
+  --color-leaf-wash: #e4efe7;
+
+  /* Five steps of one green. Drives the rainfall calendar, plot fills,
+     and every chart. Read as a density, never as five categories. */
+  --color-leaf-1: #e4efe7;
+  --color-leaf-2: #bcd9c5;
+  --color-leaf-3: #7fb894;
+  --color-leaf-4: #2a6f4e;
+  --color-leaf-5: #16402e;
+
+  /* --- Haldi: Sangli turmeric. Market, price, and "medium".
+         Never carries white text — 2.19:1. Use ink on haldi,
+         or haldi-ink for haldi-coloured text on light ground. --- */
+  --color-haldi: #e0a526;
+  --color-haldi-ink: #8a5d06;
+  --color-haldi-wash: #fbf0d8;
+
+  /* --- Anar: Solapur pomegranate. Risk, deficiency, and "low". --- */
+  --color-anar: #a8332e;
+  --color-anar-wash: #f8e5e3;
+
+  /* --- Jal: water. Irrigation, monsoon, rainfall. --- */
+  --color-jal: #4a7c9b;
+  --color-jal-ink: #33607b;
+  --color-jal-wash: #e4edf3;
+
+  /* --- Ground --- */
+  --color-paper: #f6f7f2;
+  --color-surface: #ffffff;
+  --color-line: #d5dbcd;
+
+  /* --- Night: punctuation only. The plot readout card, and the closing
+         band. Two places on the whole product — see PLAN.md §2. --- */
+  --color-night: #070c09;
+  --color-night-rise: #0f2318;
+  --color-chalk: #f6e6c8;
+  --color-mist: #c9d4cb;
+
+  /* --- Fixed, and deliberately outside the theme swap. -----------------
+         Three things stay light in dark mode because they are physical
+         objects or lit surfaces: the highlighter's ink, the Soil Health
+         Card (real paper has no dark mode), and type on the lime closing
+         band. They need a dark text colour that never flips. --- */
+  --color-on-light: #14201a;
+  --color-on-light-soft: #3d4b42;
+
+  /* --- Type --- */
+  --font-display: var(--font-anek), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-sans: var(--font-mukta), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", monospace;
+  /* Reserved for the report surface and pull-quotes, where it should read
+     like a printed government document. That is its one job. */
+  --font-doc: var(--font-tiro), Georgia, "Times New Roman", serif;
+
+  --radius-card: 20px;
+  --radius-photo: 28px;
+
+  /* Soft, never harsh. Cards sit on paper; they don't hover over it. */
+  --shadow-card: 0 1px 2px rgba(20, 32, 26, 0.04), 0 8px 24px rgba(20, 32, 26, 0.06);
+  --shadow-panel: 0 2px 6px rgba(20, 32, 26, 0.08), 0 16px 40px rgba(20, 32, 26, 0.14);
+
+  /* The house easing. Everything decelerates like settling soil. */
+  --ease-regur: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ============================================================
+   REGUR AFTER DARK — PLAN.md §11
+   Same system, re-grounded. Nothing here is a new component: every
+   token below is one of the tokens above, re-declared. `:root[data-theme]`
+   is (0,1,1) and beats the (0,0,1) `:root` @theme emits, so the whole
+   product swaps without a single component knowing about it.
+
+   The palette narrows deliberately: black ground, one green that has
+   climbed into lime, and turmeric. Colour now means something scarcer
+   than it does on paper, so it gets spent more carefully.
+   ============================================================ */
+
+:root[data-theme="dark"] {
+  /* Ground. Not pure black — regur under a moonless sky still has green in
+     it, and pure #000 makes the lime vibrate. */
+  --color-paper: #0a0f0b;
+  --color-surface: #121a14;
+  --color-line: #26332b;
+
+  /* Text inverts. ink is now the light. 15.8:1 on paper. */
+  --color-ink: #e8efe4;
+  --color-ink-soft: #b4c2b7; /* 9.1:1 */
+  --color-ink-mute: #8b9a8f; /* 5.6:1 — still clears AA at 15px */
+
+  /* The green climbs. On paper the primary is a deep standing-crop green;
+     in the dark it becomes new growth — कोंब — the colour of a shoot under
+     a torch. 12.9:1 on the ground. */
+  --color-leaf: #a8d94f;
+  --color-leaf-deep: #d6efb0;
+  /* Matches leaf-1 exactly, as it does on paper. It has to stay readable as a
+     track and a fill over `surface`, not just over the page. */
+  --color-leaf-wash: #1a2b1e;
+
+  /* The ramp reverses its lightness but not its meaning: 1 is still the
+     faintest reading, 5 still the strongest. Charts need no changes. */
+  --color-leaf-1: #1a2b1e;
+  --color-leaf-2: #24422a;
+  --color-leaf-3: #3f6f35;
+  --color-leaf-4: #74a83f;
+  --color-leaf-5: #b7e04b;
+
+  /* Haldi brightens to hold its own against the lime. */
+  --color-haldi: #f0bf3f;
+  --color-haldi-ink: #f5d488;
+  --color-haldi-wash: #2c2312;
+
+  --color-anar: #ef7a70;
+  --color-anar-wash: #2e1715;
+
+  --color-jal: #7fb8d6;
+  --color-jal-ink: #a9d3e8;
+  --color-jal-wash: #16242e;
+
+  /* Night has to lift off the ground now, or panels over photographs
+     dissolve into the page. */
+  --color-night: #101a13;
+  --color-night-rise: #1a2c20;
+
+  /* Furrows read as light on a dark field. */
+  --field-row-line: rgba(232, 239, 228, 0.13);
+
+  /* Shadows stop being shadows in the dark — nothing casts onto black.
+     What separates a card from the ground here is its own lit edge, so
+     the "shadow" is a hairline plus a wide, very soft pool. */
+  --shadow-card: 0 0 0 1px rgba(232, 239, 228, 0.06),
+    0 8px 28px rgba(0, 0, 0, 0.5);
+  --shadow-panel: 0 0 0 1px rgba(232, 239, 228, 0.09),
+    0 18px 48px rgba(0, 0, 0, 0.66);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+    /* Scrollbars, form controls and the overscroll gutter follow the theme. */
+    color-scheme: light;
+  }
+
+  html[data-theme="dark"] {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    /* 15px, not 14. Outdoor sunlight, older eyes, thumb use. */
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    /* Only fires on toggle: the theme attribute is written before first
+       paint, so there is no initial state to transition from. */
+    transition: background-color 0.35s var(--ease-regur),
+      color 0.35s var(--ease-regur);
+  }
+
+  /* Devanagari sits lower and taller than Latin. Give it room. */
+  :lang(mr),
+  .mr {
+    line-height: 1.75;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-variation-settings: "wdth" 100;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  /* Measured values are lab readouts. They line up in columns. */
+  .tnum,
+  code,
+  kbd {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-leaf);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--color-leaf-wash);
+    color: var(--color-leaf-deep);
+  }
+
+  /* Selecting text in the dark should read like a torch on it, not like a
+     hole in the page — so the dark ramp inverts the pair. */
+  [data-theme="dark"] ::selection {
+    background: var(--color-leaf-5);
+    color: var(--color-on-light);
+  }
+
+  /* Every tap target clears 48px. Non-negotiable for this audience. */
+  button,
+  a[role="button"],
+  [data-tap] {
+    touch-action: manipulation;
+  }
+
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+    font-size: 16px; /* below 16px iOS zooms the viewport on focus */
+  }
+}
+
+/* ============================================================
+   Utilities
+   ============================================================ */
+
+@utility safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@utility hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ---- Display type -------------------------------------------------------
+   The width axis does the work a second typeface usually would: condensed
+   for mass, extended for the small label.
+
+   Devanagari conjuncts (जोडाक्षरे) and the shirorekha break up under
+   compression, so Marathi holds at 100 while Latin compresses. Two
+   variables, one utility. */
+
+@utility statement {
+  font-family: var(--font-display);
+  /* The lower bound has to clear a 360px screen: Marathi words are long and
+     don't hyphenate, so an over-large minimum pushes the line past the edge. */
+  font-size: clamp(2rem, 7vw, 5rem);
+  font-weight: 600;
+  font-variation-settings: "wdth" var(--wdth-statement, 92);
+  letter-spacing: -0.02em;
+  line-height: 1.04;
+  text-wrap: balance;
+}
+
+@utility section-head {
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 3.5vw, 2.5rem);
+  font-weight: 600;
+  font-variation-settings: "wdth" 100;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+@utility eyebrow {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variation-settings: "wdth" 112;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+/* Marathi never compresses, and never uppercases — Devanagari has no case. */
+:lang(mr) .statement,
+.mr .statement {
+  --wdth-statement: 100;
+  line-height: 1.22;
+}
+
+:lang(mr) .eyebrow,
+.mr .eyebrow {
+  text-transform: none;
+  letter-spacing: 0.06em;
+}
+
+/* ---- The highlighter ----------------------------------------------------
+   Haldi can never carry text on paper (2.19:1). Behind dark ink it reads
+   6.7:1 — which is exactly how a real highlighter works. This is the
+   accent for the whole product.
+
+   It does not invert. A highlighter is a physical mark: the stripe is the
+   lit surface and the word sits on top of it, in the dark as much as in
+   the light. Flipping the text to --color-ink would put pale type on
+   turmeric at 1.3:1 and destroy the one accent the product has. Hence
+   --color-on-light, which is outside the swap. */
+
+@utility marked {
+  background-image: linear-gradient(
+    104deg,
+    transparent 0.4%,
+    var(--color-haldi) 2.2%,
+    var(--color-haldi) 97.8%,
+    transparent 99.6%
+  );
+  background-size: 100% 62%;
+  background-position: 0 78%;
+  background-repeat: no-repeat;
+  padding: 0 0.18em;
+  color: var(--color-on-light);
+}
+
+/* ---- The wordmark -------------------------------------------------------
+   AgroSense, lit, in the product's own green.
+
+   This was gold first and gold was wrong on paper. Nothing that still reads
+   as bright yellow clears 3:1 on #f6f7f2, so the light theme had to prop the
+   letters up with a dark amber contact edge — which made the wordmark look
+   like an outlined sticker rather than type. Worse, it spent the turmeric:
+   haldi is the one accent this product has, and it belongs to the highlighter
+   on the sample card, not to the logo sitting a hundred pixels away.
+
+   So the mark takes `leaf`, the primary. It is already the colour everything
+   else on the page is built from, and it is the one token that solves both
+   grounds by itself: a deep standing-crop green on paper at 5.4:1, with the
+   weight to stand beside the near-black headline, and new-growth lime in the
+   dark, where the glow stops being a rescue and becomes the point.
+
+   Every blur radius is in `em`, so one utility serves the 7.5rem hero
+   wordmark and the 17px one in the header: the bloom scales with the type
+   instead of turning into a smudge at small sizes. */
+
+/* The colour is set here so the utility stands alone, but pair it with
+   `text-leaf` wherever it lands on something already carrying `text-ink` —
+   that is what lets tailwind-merge drop the losing colour instead of leaving
+   two `color` declarations to fight it out on utility source order. */
+@utility wordmark {
+  color: var(--color-leaf);
+  /* Restrained on paper. Green on near-white has all the contrast it needs,
+     so the halo is only there to keep the letters from sitting flat — push it
+     further and it reads as a printing error. */
+  text-shadow:
+    0 0 0.16em color-mix(in oklab, var(--color-leaf) 26%, transparent),
+    0 0 0.55em color-mix(in oklab, var(--color-leaf) 14%, transparent);
+}
+
+/* Unlayered, so it beats the utility regardless of source order. The lime can
+   take a real bloom: on a black ground there is nothing for it to muddy. */
+[data-theme="dark"] .wordmark {
+  text-shadow:
+    0 0 0.1em color-mix(in oklab, var(--color-leaf) 70%, transparent),
+    0 0 0.34em color-mix(in oklab, var(--color-leaf) 52%, transparent),
+    0 0 0.8em color-mix(in oklab, var(--color-leaf) 34%, transparent),
+    0 0 1.7em color-mix(in oklab, var(--color-leaf) 20%, transparent);
+}
+
+/* ---- Hatch --------------------------------------------------------------
+   Forecast, not fact. A rainfall bar for a day that hasn't happened is drawn
+   in diagonal ruling rather than solid fill — the way a surveyor hatches an
+   area that is proposed rather than built.
+
+   It replaces an outline, which was the first attempt and was wrong twice: a
+   1px border reads as "small" next to a solid neighbour, and in the dark it
+   very nearly disappears. A hatch carries the same weight as a fill while
+   still being obviously provisional, which is exactly the distinction between
+   22 mm that fell and 22 mm that might. */
+
+@utility hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--hatch-ink, var(--color-leaf)) 0 1.5px,
+    transparent 1.5px 5px
+  );
+}
+
+/* ---- Deck glow ----------------------------------------------------------
+   The pallets throw light in the dark and nothing at all on paper.
+
+   On a near-black ground a card needs something to lift it, and a shadow can't
+   do it — nothing casts onto black (PLAN.md §11). A bloom in the deck's own
+   hue does, and it also does the job the 3D transform can only half do: it
+   says which pallet is in front.
+
+   Written as a colour that is transparent until the dark theme fills it in,
+   rather than as a `dark:` variant on the shadow itself. That keeps one
+   box-shadow declaration on the element in both themes, which is what lets it
+   transition smoothly as the active card changes — two different shadow
+   classes swapping would jump. */
+
+@utility deck-glow {
+  box-shadow: 0 20px 55px -28px var(--deck-glow, transparent);
+  transition: box-shadow 0.55s var(--ease-regur);
+}
+
+@utility deck-glow-near {
+  box-shadow:
+    0 26px 80px -22px var(--deck-glow, transparent),
+    0 0 44px -14px var(--deck-glow, transparent);
+  transition: box-shadow 0.55s var(--ease-regur);
+}
+
+/* `--deck-hue` is set per deck, so crops bloom green and fertilizers gold. */
+[data-theme="dark"] [data-deck] {
+  --deck-glow: color-mix(
+    in oklab,
+    var(--deck-hue, var(--color-leaf)) 72%,
+    transparent
+  );
+}
+
+/* ---- Paper islands ------------------------------------------------------
+   A few things on this site are physical objects rather than interface. The
+   Soil Health Card is a printed sheet a farmer keeps folded in a pocket, and
+   real paper has no dark mode — inverting it would turn the one honest
+   artifact in the product into a widget.
+
+   So the island re-declares the light tokens locally. Everything inside it
+   keeps using text-ink, border-line and the rest with no idea a theme
+   happened. The shadow is left alone on purpose: the card is lit paper lying
+   on a dark page, and it should cast onto it. */
+
+@utility paper-island {
+  --color-ink: #14201a;
+  --color-ink-soft: #3d4b42;
+  --color-ink-mute: #52605a;
+  --color-line: #d5dbcd;
+  --color-leaf: #2a6f4e;
+  --color-leaf-deep: #16402e;
+  --color-haldi: #e0a526;
+  --color-anar: #a8332e;
+}
+
+/* The dawn sky over a Baramati field, an hour after sunrise. */
+@utility sky-dawn {
+  background: linear-gradient(
+    180deg,
+    #1f3b4d 0%,
+    #3f6274 22%,
+    #86909a 45%,
+    #d8b98a 68%,
+    #efd3a4 84%,
+    #f6e6c8 100%
+  );
+}
+
+/* Ploughed rows receding to the horizon. Furrows are dark on a lit field and
+   lit on a dark one, so the line colour follows the theme.
+
+   The pitch is a variable because this runs at two very different scales: at
+   thumbnail size 14px reads as soil, but across a full-bleed band the same
+   value turns into corduroy. Big surfaces set it wider. */
+@utility field-rows {
+  background-image: repeating-linear-gradient(
+    91deg,
+    var(--field-row-line, rgba(20, 32, 26, 0.5)) 0px,
+    var(--field-row-line, rgba(20, 32, 26, 0.5)) 1px,
+    transparent 1px,
+    transparent var(--field-row-pitch, 14px)
+  );
+}
+
+/* ============================================================
+   Motion — one global kill switch, honoured everywhere.
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* The crop row stops drifting, so it becomes a row you scroll by hand.
+     Handled in CSS rather than by branching the markup — swapping structure
+     on a media query the server can't see is what breaks hydration. */
+  [data-marquee] {
+    overflow-x: auto;
+  }
+}
+
+/* ============================================================
+   Print — reports leave the screen as documents.
+   ============================================================ */
+
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  body {
+    background: #fff;
+    font-size: 11pt;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-block {
+    break-inside: avoid;
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+  }
+}

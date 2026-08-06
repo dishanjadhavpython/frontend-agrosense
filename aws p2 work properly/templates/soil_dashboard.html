@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Soil Dashboard | Soil Intelligence Hub</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='soil_portal.css') }}">
+</head>
+<body class="dashboard-page">
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Merged Workflow</p>
+      <h1>Soil Intelligence Dashboard</h1>
+      <p class="header-copy">Upload a PDF report, extract soil metrics, then review recommendations in the same workspace.</p>
+    </div>
+    <div class="topbar-actions">
+      <div class="identity-chip">{{ user_email }}</div>
+      <label class="primary-btn upload-trigger" for="fileInput">Upload PDF</label>
+      <a class="ghost-btn" href="{{ url_for('logout') }}">Logout</a>
+    </div>
+  </header>
+
+  <input id="fileInput" type="file" accept="application/pdf" hidden>
+
+  <div id="errorBanner" class="message-banner error hidden" role="alert"></div>
+  <div id="toastRegion" class="toast-region" aria-live="polite"></div>
+
+  <main class="dashboard-grid">
+    <aside class="side-column">
+      <section class="panel hero-panel">
+        <p class="eyebrow">Upload</p>
+        <h2>Add a soil report</h2>
+        <p>
+          Start with a PDF from the soil card flow in `aws p3`. The extracted values feed the
+          merged recommendation engine and report search endpoints.
+        </p>
+        <label class="drop-panel" for="fileInput">
+          <strong>Select PDF</strong>
+          <span>Only text-readable PDF files are accepted.</span>
+        </label>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Overview</p>
+            <h2>Document Summary</h2>
+          </div>
+        </div>
+        <div id="overviewStats" class="stat-grid"></div>
+        <div id="overviewSummary" class="summary-box">Upload or select a PDF.</div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Library</p>
+            <h2>Uploaded Reports</h2>
+          </div>
+          <span id="documentCount" class="count-chip">0</span>
+        </div>
+        <div id="documentList" class="document-list"></div>
+      </section>
+    </aside>
+
+    <section class="main-column">
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Extraction</p>
+            <h2>Soil Constituents</h2>
+          </div>
+          <span id="soilReadingsCount" class="count-chip">0</span>
+        </div>
+        <div id="soilReadingsGrid" class="values-grid"></div>
+      </section>
+
+      <section class="panel prediction-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Predictions</p>
+            <h2>Crop, Fertilizer, and Soil Health</h2>
+          </div>
+        </div>
+
+        <div class="prediction-grid">
+          <article class="prediction-card">
+            <p class="prediction-label">Recommended crop</p>
+            <h3 id="cropName">No prediction</h3>
+            <p id="cropReason" class="muted-copy">Upload a document to score crop fit.</p>
+            <div id="cropAlternatives" class="pill-row"></div>
+          </article>
+
+          <article class="prediction-card">
+            <p class="prediction-label">Soil health</p>
+            <h3 id="soilHealthLabel">No prediction</h3>
+            <p id="soilHealthSummary" class="muted-copy">Upload a document to score soil health.</p>
+            <div id="soilHealthScore" class="score-chip">Score: --</div>
+          </article>
+        </div>
+
+        <div>
+          <p class="prediction-label">Fertilizer plan</p>
+          <div id="fertilizerPlan" class="recommendation-list"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">RAG</p>
+            <h2>Ask the Report</h2>
+          </div>
+        </div>
+
+        <form id="questionForm" class="question-form">
+          <textarea id="questionInput" rows="3" placeholder="Example: Which nutrients are above range and what should I avoid adding?"></textarea>
+          <button class="primary-btn" type="submit">Ask question</button>
+        </form>
+
+        <div id="qaAnswer" class="summary-box">Ask a question about the active report.</div>
+        <div id="qaSources" class="source-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='soil_dashboard.js') }}" defer></script>
+</body>
+</html>

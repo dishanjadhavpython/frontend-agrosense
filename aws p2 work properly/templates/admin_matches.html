@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Matches</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="container">
+  <a class="btn btn-outline small" href="{{ url_for('admin_dashboard') }}">⬅ Back</a>
+
+  <div class="card" style="margin-top:14px;">
+    <h2>{{ internship["company_name"] }} — {{ internship["role_title"] }}</h2>
+    <p class="muted tiny">
+      Sector: {{ internship["sector"] }} • Mode: {{ internship["mode"] }} • Location: {{ internship["location"] }} • Seats: {{ internship["seats"] }}
+    </p>
+  </div>
+
+  <div class="section">
+    <h2>Ranked Applicants</h2>
+    <p class="muted">Candidates shown here are only those who actually applied for this opening.</p>
+
+    {% if ranked|length == 0 %}
+      <div class="card hover-soft">
+        <h4>No eligible candidates found</h4>
+        <p class="muted tiny">Wait for seeker applications or re-check later.</p>
+      </div>
+    {% else %}
+      <div class="internships">
+        {% for s in ranked %}
+          <div class="intern-card hover-lift">
+            <div class="intern-head">
+              <div>
+                <h4>{{ s.name }}</h4>
+                <p class="muted tiny">Skills: {{ s.skills }}</p>
+              </div>
+              <span class="match-badge">{{ s.score|int }}% Match</span>
+            </div>
+
+            <div class="progress">
+              <div class="progress-bar" style="width: {{ s.score|int }}%;"></div>
+            </div>
+
+            <details class="why-box">
+              <summary>Why recommended?</summary>
+              <ul>
+                {% for r in s.reasons %}
+                  <li>{{ r }}</li>
+                {% endfor %}
+              </ul>
+            </details>
+
+            <details class="why-box">
+              <summary>Score breakdown</summary>
+              <ul>
+                {% for k, v in s.breakdown.items() %}
+                  <li><b>{{ k }}</b>: {{ v }}</li>
+                {% endfor %}
+              </ul>
+            </details>
+
+            <div style="display:flex; gap:10px; margin-top:10px;">
+              <a class="btn btn-outline full" href="{{ url_for('admin_view_seeker_profile', seeker_user_id=s.user_id, internship_id=internship['id']) }}">
+                View Full Profile
+              </a>
+
+              <form method="POST" action="{{ url_for('admin_approve_allocation') }}" style="width:100%;">
+                <input type="hidden" name="internship_id" value="{{ internship['id'] }}">
+                <input type="hidden" name="seeker_user_id" value="{{ s.user_id }}">
+                <button class="btn btn-primary full" type="submit">Approve Allocation</button>
+              </form>
+            </div>
+
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

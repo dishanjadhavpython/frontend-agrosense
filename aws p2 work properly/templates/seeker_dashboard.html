@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Intern Seeker Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <div class="dashboard">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <div class="logo small">PM Internship</div>
+        <button class="nav-toggle side-toggle" id="sideToggle" type="button">☰</button>
+      </div>
+
+      <button class="side-link active" data-tab="profileTab" type="button">Profile</button>
+      <button class="side-link" data-tab="internshipsTab" type="button">Available Internships</button>
+      <button class="side-link" data-tab="statusTab" type="button">Application Status</button>
+      <a class="side-link logout" href="{{ url_for('logout') }}">Logout</a>
+    </aside>
+
+    <main class="main">
+
+      <!-- ✅ Journey Bar -->
+      <div class="journey">
+        <div class="journey-step active">
+          <div class="left">
+            <small>Step 1</small>
+            <b>Profile</b>
+          </div>
+          <div class="journey-dot"></div>
+        </div>
+
+        <div class="journey-step {% if has_profile %}active{% endif %}">
+          <div class="left">
+            <small>Step 2</small>
+            <b>Matching</b>
+          </div>
+          <div class="journey-dot"></div>
+        </div>
+
+        <div class="journey-step {% if applications and applications|length > 0 %}active{% endif %}">
+          <div class="left">
+            <small>Step 3</small>
+            <b>Apply</b>
+          </div>
+          <div class="journey-dot"></div>
+        </div>
+
+        <div class="journey-step {% if applications and applications|selectattr('status','equalto','allocated')|list|length > 0 %}active{% endif %}">
+          <div class="left">
+            <small>Step 4</small>
+            <b>Allocation</b>
+          </div>
+          <div class="journey-dot"></div>
+        </div>
+
+        <div class="journey-step {% if applications and applications|selectattr('status','equalto','successful')|list|length > 0 %}active{% endif %}">
+          <div class="left">
+            <small>Step 5</small>
+            <b>Offer</b>
+          </div>
+          <div class="journey-dot"></div>
+        </div>
+      </div>
+
+      <div class="topbar">
+        <div>
+          <h2>Intern Seeker Dashboard</h2>
+          <p class="muted">Complete your profile to get the best internship recommendations.</p>
+        </div>
+        <div class="pill">Duration: <b>12 Months</b></div>
+      </div>
+
+      <!-- ✅ PROFILE TAB -->
+      <section class="tab active" id="profileTab">
+        <div class="card">
+          <h3>Your Profile</h3>
+          <p class="muted tiny">
+            Fill accurate details to improve ranking + fair allocation.
+          </p>
+
+          <form class="profile-form" id="profileForm" method="POST" action="{{ url_for('save_seeker_profile') }}">
+
+            <!-- SECTION 1 -->
+            <div class="form-section">
+              <div class="section-head">
+                <h4>Personal Details</h4>
+                <p class="muted tiny">Basic communication and eligibility fields.</p>
+              </div>
+
+              <div class="grid-form">
+                <div>
+                  <label>Full Name</label>
+                  <input name="name" required placeholder="Enter your full name"
+                    value="{{ seeker['name'] if seeker else '' }}"/>
+                </div>
+
+                <div>
+                  <label>Phone Number</label>
+                  <input name="phone" required placeholder="Enter your phone number"
+                    value="{{ seeker['phone'] if seeker else '' }}"/>
+                </div>
+
+                <div>
+                  <label>Age (21 to 24)</label>
+                  <input name="age" type="number" min="21" max="24" required placeholder="Enter age"
+                    value="{{ seeker['age'] if seeker else '' }}"/>
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION 2 -->
+            <div class="form-section">
+              <div class="section-head">
+                <h4>Education Details</h4>
+                <p class="muted tiny">Used for scoring and ranking logic.</p>
+              </div>
+
+              <div class="grid-form">
+                <div>
+                  <label>10th Marks (%)</label>
+                  <input name="marks10" type="number" min="0" max="100" required
+                    value="{{ seeker['marks10'] if seeker else '' }}"/>
+                </div>
+
+                <div>
+                  <label>12th Marks (%)</label>
+                  <input name="marks12" type="number" min="0" max="100" required
+                    value="{{ seeker['marks12'] if seeker else '' }}"/>
+                </div>
+
+                <div>
+                  <label>CGPA / GPA (Out of 10)</label>
+                  <input name="gpa" type="number" step="0.01" min="0" max="10" required
+                    value="{{ seeker['gpa'] if seeker else '' }}"/>
+                </div>
+
+                <div>
+                  <label>Highest Qualification</label>
+                  <select name="qualification" required>
+                    <option value="10th" {% if seeker and seeker['qualification']=='10th' %}selected{% endif %}>10th</option>
+                    <option value="12th" {% if seeker and seeker['qualification']=='12th' %}selected{% endif %}>12th</option>
+                    <option value="ITI" {% if seeker and seeker['qualification']=='ITI' %}selected{% endif %}>ITI</option>
+                    <option value="Diploma" {% if seeker and seeker['qualification']=='Diploma' %}selected{% endif %}>Diploma</option>
+                    <option value="UG" {% if seeker and seeker['qualification']=='UG' %}selected{% endif %}>UG (Bachelor)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>Degree</label>
+                  <select name="degree" required>
+                    <option {% if seeker and seeker['degree']=='B.Tech' %}selected{% endif %}>B.Tech</option>
+                    <option {% if seeker and seeker['degree']=='B.E' %}selected{% endif %}>B.E</option>
+                    <option {% if seeker and seeker['degree']=='B.Sc' %}selected{% endif %}>B.Sc</option>
+                    <option {% if seeker and seeker['degree']=='BCA' %}selected{% endif %}>BCA</option>
+                    <option {% if seeker and seeker['degree']=='BA' %}selected{% endif %}>BA</option>
+                    <option {% if seeker and seeker['degree']=='B.Com' %}selected{% endif %}>B.Com</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>Branch / Specialization</label>
+                  <input name="branch" required placeholder="e.g., CSE / IT / ECE"
+                    value="{{ seeker['branch'] if seeker else '' }}"/>
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION 3 -->
+            <div class="form-section">
+              <div class="section-head">
+                <h4>College Details</h4>
+                <p class="muted tiny">Recorded for verification (not used heavily in scoring).</p>
+              </div>
+
+              <div class="grid-form">
+                <div>
+                  <label>College Name</label>
+                  <input name="college_name" required
+                    value="{{ seeker['college_name'] if seeker else '' }}"/>
+                </div>
+
+                <div>
+                  <label>College Type</label>
+                  <select name="college_type" required>
+                    {% set ct = seeker['college_type'] if seeker else '' %}
+                    <option {% if ct=='Government College' %}selected{% endif %}>Government College</option>
+                    <option {% if ct=='Private College' %}selected{% endif %}>Private College</option>
+                    <option {% if ct=='Government-Aided College' %}selected{% endif %}>Government-Aided College</option>
+                    <option {% if ct=='Deemed University' %}selected{% endif %}>Deemed University</option>
+                    <option {% if ct=='State University' %}selected{% endif %}>State University</option>
+                    <option {% if ct=='Central University' %}selected{% endif %}>Central University</option>
+                    <option {% if ct=='Autonomous College' %}selected{% endif %}>Autonomous College</option>
+                    <option {% if ct=='Other' %}selected{% endif %}>Other</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION 4 -->
+            <div class="form-section">
+              <div class="section-head">
+                <h4>Skills & Preferences</h4>
+                <p class="muted tiny">Used heavily for AI ranking and recommendation.</p>
+              </div>
+
+              <div class="grid-form">
+                <div>
+                  <label>Skills (comma separated)</label>
+                  <input name="skills" required
+                    value="{{ seeker['skills'] if seeker else '' }}"/>
+                </div>
+
+                <div>
+                  <label>Experience Level</label>
+                  <select name="experience_level" required>
+                    {% set ex = seeker['experience_level'] if seeker else '' %}
+                    <option value="none" {% if ex=='none' %}selected{% endif %}>None</option>
+                    <option value="beginner" {% if ex=='beginner' %}selected{% endif %}>Beginner</option>
+                    <option value="intermediate" {% if ex=='intermediate' %}selected{% endif %}>Intermediate</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>Sector Interest</label>
+                  <select name="sector_interest" required>
+                    {% set si = seeker['sector_interest'] if seeker else '' %}
+                    <option {% if si=='IT' %}selected{% endif %}>IT</option>
+                    <option {% if si=='Finance' %}selected{% endif %}>Finance</option>
+                    <option {% if si=='Manufacturing' %}selected{% endif %}>Manufacturing</option>
+                    <option {% if si=='Healthcare' %}selected{% endif %}>Healthcare</option>
+                    <option {% if si=='Education' %}selected{% endif %}>Education</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>Preferred Mode</label>
+                  <select name="preferred_mode" required>
+                    {% set pm = seeker['preferred_mode'] if seeker else '' %}
+                    <option value="remote" {% if pm=='remote' %}selected{% endif %}>Remote</option>
+                    <option value="hybrid" {% if pm=='hybrid' %}selected{% endif %}>Hybrid</option>
+                    <option value="onsite" {% if pm=='onsite' %}selected{% endif %}>Onsite</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>Preferred Location</label>
+                  <input name="preferred_location" required
+                    value="{{ seeker['preferred_location'] if seeker else '' }}"/>
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION 5 -->
+            <div class="form-section">
+              <div class="section-head">
+                <h4>Scheme & Fairness Details</h4>
+                <p class="muted tiny">Supports inclusive allocation and scheme compliance.</p>
+              </div>
+
+              <div class="grid-form">
+                <div>
+                  <label>Caste Category</label>
+                  <select name="caste_category" required>
+                    {% set cc = seeker['caste_category'] if seeker else '' %}
+                    <option {% if cc=='General' %}selected{% endif %}>General</option>
+                    <option {% if cc=='OBC' %}selected{% endif %}>OBC</option>
+                    <option {% if cc=='SC' %}selected{% endif %}>SC</option>
+                    <option {% if cc=='ST' %}selected{% endif %}>ST</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>Rural / Urban</label>
+                  <select name="rural_urban" required>
+                    {% set ru = seeker['rural_urban'] if seeker else '' %}
+                    <option {% if ru=='Rural' %}selected{% endif %}>Rural</option>
+                    <option {% if ru=='Urban' %}selected{% endif %}>Urban</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>Aspirational District?</label>
+                  <select name="aspirational_district" required>
+                    {% set ad = seeker['aspirational_district'] if seeker else '' %}
+                    <option value="yes" {% if ad=='yes' %}selected{% endif %}>Yes</option>
+                    <option value="no" {% if ad=='no' %}selected{% endif %}>No</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>LOR Available?</label>
+                  <select name="lor_available" required>
+                    {% set lor = seeker['lor_available'] if seeker else '' %}
+                    <option value="yes" {% if lor=='yes' %}selected{% endif %}>Yes</option>
+                    <option value="no" {% if lor=='no' %}selected{% endif %}>No</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>First-time Intern?</label>
+                  <select name="first_time_intern" required>
+                    {% set fi = seeker['first_time_intern'] if seeker else '' %}
+                    <option value="yes" {% if fi=='yes' %}selected{% endif %}>Yes</option>
+                    <option value="no" {% if fi=='no' %}selected{% endif %}>No</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>PwD?</label>
+                  <select name="pwd" required>
+                    {% set pw = seeker['pwd'] if seeker else '' %}
+                    <option value="no" {% if pw=='no' %}selected{% endif %}>No</option>
+                    <option value="yes" {% if pw=='yes' %}selected{% endif %}>Yes</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>Family Income Bracket</label>
+                  <select name="income_bracket" required>
+                    {% set ib = seeker['income_bracket'] if seeker else '' %}
+                    <option {% if ib=='Below 1L' %}selected{% endif %}>Below 1L</option>
+                    <option {% if ib=='1L–3L' %}selected{% endif %}>1L–3L</option>
+                    <option {% if ib=='3L–5L' %}selected{% endif %}>3L–5L</option>
+                    <option {% if ib=='Above 5L' %}selected{% endif %}>Above 5L</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION 6 -->
+            <div class="form-section">
+              <div class="section-head">
+                <h4>Eligibility Check</h4>
+                <p class="muted tiny">Validation fields (not used for score).</p>
+              </div>
+
+              <div class="grid-form">
+                <div>
+                  <label>Currently Full-time Employed?</label>
+                  <select name="employed_fulltime" required>
+                    {% set ef = seeker['employed_fulltime'] if seeker else '' %}
+                    <option value="no" {% if ef=='no' %}selected{% endif %}>No</option>
+                    <option value="yes" {% if ef=='yes' %}selected{% endif %}>Yes</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>Currently Full-time Student?</label>
+                  <select name="student_fulltime" required>
+                    {% set sf = seeker['student_fulltime'] if seeker else '' %}
+                    <option value="no" {% if sf=='no' %}selected{% endif %}>No</option>
+                    <option value="yes" {% if sf=='yes' %}selected{% endif %}>Yes</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label>Distance/Online Student?</label>
+                  <select name="distance_online_student" required>
+                    {% set ds = seeker['distance_online_student'] if seeker else '' %}
+                    <option value="no" {% if ds=='no' %}selected{% endif %}>No</option>
+                    <option value="yes" {% if ds=='yes' %}selected{% endif %}>Yes</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="sticky-actions">
+              <button class="btn btn-primary full" id="searchMatchBtn" type="submit">
+                Save Profile & Search Matching Internships
+              </button>
+            </div>
+
+          </form>
+        </div>
+      </section>
+
+      <!-- ✅ INTERNSHIPS TAB -->
+      <section class="tab" id="internshipsTab">
+        <div class="card">
+          <h3>Ranked Internship Openings</h3>
+          <p class="muted">Internships are ranked based on match score.</p>
+
+          <div class="internships" id="internshipsContainer">
+
+            {% if not has_profile %}
+              <div class="card hover-soft">
+                <h4>Profile not found</h4>
+                <p class="muted tiny">Complete your profile first to get recommendations.</p>
+              </div>
+
+            {% elif recommendations|length == 0 %}
+              <div class="card hover-soft">
+                <h4>No internships available</h4>
+                <p class="muted tiny">No active internships posted yet. Check later.</p>
+              </div>
+
+            {% else %}
+              {% for r in recommendations %}
+                <div class="intern-card hover-lift">
+                  <div class="intern-head">
+                    <div>
+                      <h4>{{ r.role_title }}</h4>
+                      <p class="muted tiny">
+                        {{ r.company_name }} • {{ r.mode|capitalize }} • {{ r.location }}
+                      </p>
+                    </div>
+                    <span class="match-badge">{{ r.score|int }}% Match</span>
+                  </div>
+
+                  <div class="progress">
+                    <div class="progress-bar" style="width: {{ r.score|int }}%;"></div>
+                  </div>
+
+                  <p class="muted tiny">Sector: {{ r.sector }} • Seats: {{ r.seats }}</p>
+
+                  <details class="why-box">
+                    <summary>Why recommended?</summary>
+                    <ul>
+                      {% for reason in r.reasons %}
+                        <li>{{ reason }}</li>
+                      {% endfor %}
+                    </ul>
+                  </details>
+
+                  <form method="POST" action="{{ url_for('seeker_apply') }}">
+                    <input type="hidden" name="internship_id" value="{{ r.internship_id }}">
+                    <input type="hidden" name="match_score" value="{{ r.score }}">
+                    <input type="hidden" name="match_reason" value="{{ ', '.join(r.reasons) }}">
+                    <button class="btn btn-primary" type="submit">Apply Now</button>
+                  </form>
+                </div>
+              {% endfor %}
+            {% endif %}
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ✅ STATUS TAB -->
+      <section class="tab" id="statusTab">
+        <div class="card">
+          <h3>Application Status</h3>
+          <p class="muted">Track your internship allocation progress.</p>
+
+          <div class="status-list" id="statusContainer">
+
+            {% if applications and applications|length > 0 %}
+              {% for a in applications %}
+                <div class="status-item hover-soft">
+                  <div>
+                    <h4>{{ a["role_title"] }}</h4>
+                    <p class="muted tiny">{{ a["company_name"] }} • Match: {{ a["match_score"]|int }}%</p>
+                  </div>
+
+                  {% if a["status"] == "pending" %}
+                    <span class="status-badge pending">Pending</span>
+                  {% elif a["status"] == "allocated" %}
+                    <span class="status-badge allocated">Allocated</span>
+                  {% elif a["status"] == "offered" %}
+                    <span class="status-badge offered">Offered</span>
+                  {% elif a["status"] == "successful" %}
+                    <form method="POST" action="{{ url_for('seeker_accept_offer') }}">
+                      <input type="hidden" name="internship_id" value="{{ a['internship_id'] }}">
+                      <button class="btn btn-primary small" type="submit">Accept Offer</button>
+                    </form>
+                  {% else %}
+                    <span class="status-badge rejected">{{ a["status"] }}</span>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="card hover-soft">
+                <h4>No applications yet</h4>
+                <p class="muted tiny">Apply to internships to see updates here.</p>
+              </div>
+            {% endif %}
+
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
+

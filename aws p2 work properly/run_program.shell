@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+if [[ ! -x ".venv/bin/python" ]]; then
+  echo "Missing virtual environment at .venv/bin/python"
+  echo "Create it and install dependencies first:"
+  echo "  python3 -m venv .venv"
+  echo "  source .venv/bin/activate"
+  echo "  pip install -r requirements.txt"
+  exit 1
+fi
+
+PYTHON=".venv/bin/python"
+
+if ! "$PYTHON" - <<'PY' >/dev/null 2>&1
+import flask
+import fitz
+import numpy
+import sklearn
+PY
+then
+  echo "Required packages are missing in .venv."
+  echo "Install them with:"
+  echo "  source .venv/bin/activate"
+  echo "  pip install -r requirements.txt"
+  exit 1
+fi
+
+mkdir -p uploads data
+
+export DATABASE_PATH="${DATABASE_PATH:-$SCRIPT_DIR/database.db}"
+export UPLOAD_DIR="${UPLOAD_DIR:-$SCRIPT_DIR/uploads}"
+export VECTOR_STORE_PATH="${VECTOR_STORE_PATH:-$SCRIPT_DIR/data/vector_store.pkl}"
+export FLASK_ENV="${FLASK_ENV:-production}"
+export PYTHONUNBUFFERED=1
+
+echo "Starting Soil Intelligence Hub at http://127.0.0.1:5000"
+echo "Login page: http://127.0.0.1:5000/login"
+echo "Dashboard:  http://127.0.0.1:5000/dashboard"
+
+exec "$PYTHON" app.py

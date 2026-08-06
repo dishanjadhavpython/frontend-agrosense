@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PM Internship Scheme | Smart Allocation Engine</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <header class="navbar">
+    <div class="nav-left">
+      <div class="logo">PM Internship Scheme</div>
+    </div>
+
+    <nav class="nav-links" id="navLinks">
+      <a href="#home">Home</a>
+      <a href="#about">About</a>
+      <a href="#how">How It Works</a>
+      <a href="#contact">Contact</a>
+      <a class="btn btn-primary small" href="{{ url_for('login') }}">Login</a>
+    </nav>
+
+    <button class="nav-toggle" id="navToggle" type="button">☰</button>
+  </header>
+
+  <main class="container" id="home">
+    <section class="hero">
+      <div class="hero-left">
+        <h1>Smart Internship Allocation</h1>
+        <p class="muted">
+          A practical prototype that ranks internship opportunities using skills,
+          academics, preferences, and fairness-aware allocation support.
+        </p>
+
+        <div class="hero-actions">
+          <a href="{{ url_for('login') }}" class="btn btn-primary">Login Now</a>
+          <a href="#how" class="btn btn-outline">Explore Features</a>
+        </div>
+
+        <div class="hero-badges">
+          <span class="badge">Fast Matching</span>
+          <span class="badge">Transparent Scoring</span>
+          <span class="badge">Low-end Device Ready</span>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <div class="glass-card">
+          <h3>Quick Overview</h3>
+          <ul class="clean-list">
+            <li>Student creates profile</li>
+            <li>System recommends best internships</li>
+            <li>Admin reviews ranked applicants</li>
+            <li>Company confirms and offers</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="how">
+      <h2>How It Works</h2>
+      <p class="muted">
+        A simple and transparent flow designed for large-scale internship programs.
+      </p>
+
+      <div class="grid3">
+        <div class="card hover-lift">
+          <div class="card-icon">1</div>
+          <h3>Build Your Profile</h3>
+          <p class="muted">Add skills, marks, preferences, and eligibility details.</p>
+        </div>
+
+        <div class="card hover-lift">
+          <div class="card-icon">2</div>
+          <h3>AI-Based Matching</h3>
+          <p class="muted">Internships are ranked using scoring + explainable reasons.</p>
+        </div>
+
+        <div class="card hover-lift">
+          <div class="card-icon">3</div>
+          <h3>Approval & Offer</h3>
+          <p class="muted">Admin approves allocation and the company sends the offer.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="about">
+      <h2>Who Can Use This?</h2>
+
+      <div class="grid3">
+        <div class="card hover-lift">
+          <h3>Intern Seeker</h3>
+          <ul class="clean-list">
+            <li>Create your profile</li>
+            <li>See ranked recommendations</li>
+            <li>Apply and track updates</li>
+          </ul>
+        </div>
+
+        <div class="card hover-lift">
+          <h3>Company Provider</h3>
+          <ul class="clean-list">
+            <li>Post openings</li>
+            <li>Monitor allocations</li>
+            <li>Offer internships faster</li>
+          </ul>
+        </div>
+
+        <div class="card hover-lift">
+          <h3>Admin (Authorizer)</h3>
+          <ul class="clean-list">
+            <li>View all postings</li>
+            <li>Review ranked applicants</li>
+            <li>Approve allocation fairly</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="contact">
+      <h2>Why This Matters</h2>
+      <div class="grid2">
+        <div class="card hover-lift">
+          <h3>Fair & Transparent</h3>
+          <p class="muted">
+            Supports explainable ranking and inclusive allocation logic.
+          </p>
+        </div>
+        <div class="card hover-lift">
+          <h3>Fast & Scalable</h3>
+          <p class="muted">
+            Designed to handle large numbers of seekers and openings smoothly.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <p class="muted">Prototype for Hackathon | PM Internship Scheme Allocation Engine</p>
+    </footer>
+  </main>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

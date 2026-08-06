@@ -1,0 +1,35 @@
+{
+  "name": "agrosense",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "api": "./.venv/bin/uvicorn backend.app:app --host 127.0.0.1 --port 8000 --reload",
+    "api:install": "./.venv/bin/pip install -r backend/requirements.txt",
+    "api:test": "./.venv/bin/python -m unittest discover -s backend/tests -t ."
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^7.6.4",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.28.0",
+    "motion": "^12.43.0",
+    "next": "16.3.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "recharts": "^3.10.1",
+    "tailwind-merge": "^3.6.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
