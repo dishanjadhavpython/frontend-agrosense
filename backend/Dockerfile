@@ -29,13 +29,29 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# torch resolves to the CUDA build by default, which is about 2 GB of driver
-# nobody here can use — this service runs a single EfficientNet forward pass on
-# CPU. The CPU index is the whole difference between a 1 GB image and a 3 GB one.
-COPY backend/requirements.txt ./backend/requirements.txt
+# torch first, and from the CPU index exclusively. This service runs a single
+# EfficientNet forward pass on CPU and will never see a GPU, so the default
+# CUDA build is about 2 GB of driver nobody here can use.
+#
+# `--index-url` rather than `--extra-index-url`: with `--extra-` pip sees both
+# indexes and resolves across them, which is a coin toss on which torch wins.
 RUN pip install --no-cache-dir \
-        --extra-index-url https://download.pytorch.org/whl/cpu \
-        -r backend/requirements.txt
+        --index-url https://download.pytorch.org/whl/cpu \
+        torch torchvision
+
+# Everything else from PyPI. torch and torchvision are already satisfied above,
+# so their entries in requirements.txt resolve to "already satisfied" rather
+# than a second, CUDA-flavoured download.
+#
+# The 244 MB of nvidia libraries in this image came from xgboost, not torch —
+# it declares nvidia-nccl-cu13 unconditionally on linux. NCCL is for collective
+# communication between several GPUs and XGBoost only loads it for
+# `device="cuda"`, so dropping it leaves CPU inference untouched. Removed in the
+# same layer, because uninstalling in a later one would leave the files in the
+# earlier layer and save nothing.
+COPY backend/requirements.txt ./backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt \
+    && pip uninstall -y nvidia-nccl-cu13
 
 COPY backend/ ./backend/
 COPY ML/models/ ./ML/models/

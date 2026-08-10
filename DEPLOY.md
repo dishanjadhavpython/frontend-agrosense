@@ -38,6 +38,15 @@ fly deploy
 fly logs                                       # first boot takes ~60s: torch
 ```
 
+`fly deploy` builds on Fly's own remote builder, which produces the x86_64
+image the machines need. **Do not add `--local-only` on an Apple Silicon Mac**
+— that builds arm64, and the mismatch surfaces as an exec format error at boot
+rather than as a build failure. To build locally anyway, name the platform:
+
+```bash
+docker build --platform linux/amd64 -f backend/Dockerfile -t agrosense-api .
+```
+
 Check it came up:
 
 ```bash
