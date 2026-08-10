@@ -10,6 +10,7 @@ import {
   verdictTint,
   type FertPrediction,
 } from "@/data/prediction";
+import { Insights } from "./Insights";
 import { Badge, DetailPage, type DetailLink } from "./DetailPage";
 
 /** One bag, and whether to buy it. */
@@ -73,6 +74,7 @@ export function FertDetail({ pick }: { pick: FertPrediction }) {
       facts={facts}
       notes={pick.notes}
       links={links}
+      insights={<Insights category="fertilizer" slug={pick.key} />}
       linksTitle={mr ? "कोणत्या पिकांसाठी" : "Which of your crops"}
     />
   );

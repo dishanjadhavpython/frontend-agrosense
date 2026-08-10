@@ -9,6 +9,7 @@ import {
   verdictLabel,
   type CropPrediction,
 } from "@/data/prediction";
+import { Insights } from "./Insights";
 import { Badge, DetailPage, type DetailLink } from "./DetailPage";
 
 /** One recommended crop, and the bags matched to it. */
@@ -58,6 +59,7 @@ export function CropDetail({ pick }: { pick: CropPrediction }) {
       facts={pick.facts}
       notes={pick.notes}
       links={links}
+      insights={<Insights category="crop" slug={pick.key} />}
       linksTitle={mr ? "याला काय द्यायचं" : "What to feed it"}
     />
   );

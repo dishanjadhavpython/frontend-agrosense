@@ -87,6 +87,109 @@ export type CardReadResult = {
   };
 };
 
+/* ---- What the three models return ------------------------------------- */
+
+export type SoilGuess = {
+  /** Matches a key in `SOILS` (src/data/soils.ts) and the classifier's own labels. */
+  key: string;
+  /** Percent, after temperature scaling — so it means roughly what it says. */
+  confidence: number;
+};
+
+export type PredictedSoil = SoilGuess & {
+  /** Runners-up, most likely first. Shown because a classifier trained on ~28
+   *  real photographs of some of these soils is not entitled to one answer. */
+  alternatives: SoilGuess[];
+  /** Why this soil suits or fights certain crops, from the suitability table. */
+  note: string;
+};
+
+export type PredictedCrop = {
+  name: string;
+  confidence: number;
+  /** The crop model's own probability, before the soil re-ranking. */
+  model_score?: number;
+  /** How the identified soil treated this crop. */
+  soil_fit?: "favoured" | "neutral" | "discouraged" | "unknown";
+  soil_note?: string;
+};
+
+export type PredictedFertilizer = {
+  name: string;
+  confidence: number;
+  /** `hold` when the card already reads high for the nutrient this bag sells. */
+  verdict: "apply" | "hold";
+};
+
+export type PredictionResult = {
+  document_id: string;
+  /** Null when no soil photograph was sent — the crops still come back. */
+  soil: PredictedSoil | null;
+  /** False when the ranking is from nutrients alone. */
+  soil_applied: boolean;
+  crops: PredictedCrop[];
+  fertilizers: PredictedFertilizer[];
+  readings_used: Record<string, number>;
+  needs_review: boolean;
+};
+
+/* ---- What the research agents gathered --------------------------------- */
+
+export type SourceRef = { title: string; url: string };
+export type YoutubeRef = { title: string; url: string; channel?: string };
+export type GovernmentScheme = { name: string; description: string; url?: string };
+
+/** One government-recorded mandi price. Never written by a language model —
+ *  these come from the Agmarknet resource on data.gov.in, dated and attributed. */
+export type PriceObservation = {
+  commodity: string;
+  market: string;
+  district?: string;
+  state?: string;
+  arrival_date: string;
+  min_price?: number;
+  max_price?: number;
+  modal_price: number;
+  unit?: string;
+};
+
+export type TopicReport = {
+  title: string;
+  overview: string;
+  key_facts: string[];
+  new_developments: string[];
+  government_schemes: GovernmentScheme[];
+  market_notes: string;
+  prices: PriceObservation[];
+  price_note?: string;
+  youtube_resources: YoutubeRef[];
+  sources: SourceRef[];
+  /** The Reviewer did not approve it, or the source gate stripped something. */
+  needs_review?: boolean;
+  reviewer_concerns?: string[];
+  generated_at?: string;
+};
+
+export type InsightsResponse =
+  | {
+      available: false;
+      reason: string;
+      enabled?: boolean;
+    }
+  | {
+      available: true;
+      enabled: boolean;
+      category: string;
+      name: string;
+      slug: string;
+      /** Hours since the report was written. Null when never written. */
+      age_hours: number | null;
+      /** True past the refresh interval. Content is still served. */
+      stale: boolean;
+      interval_hours?: number;
+      report: TopicReport;
+    };
+
 /** Why a read failed, in terms the upload UI can turn into advice. */
 export type CardErrorKind =
   | "unsupported" // wrong file type or too big

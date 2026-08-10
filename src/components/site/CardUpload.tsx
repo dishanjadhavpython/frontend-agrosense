@@ -21,7 +21,11 @@ import { photo } from "@/lib/assets";
 import { cn } from "@/lib/cn";
 import { SAMPLE_READING, readingsFromExtraction } from "@/data/soilReading";
 import { useCard } from "@/lib/cardState";
-import type { CardErrorBody, CardReadResult } from "@/lib/cardTypes";
+import type {
+  CardErrorBody,
+  CardReadResult,
+  PredictionResult,
+} from "@/lib/cardTypes";
 import { Section } from "@/components/ui/Section";
 import { Reveal } from "@/components/ui/Reveal";
 import { Button } from "@/components/ui/Button";
@@ -158,7 +162,7 @@ export function CardUpload() {
 
   // Held above this section: "the card, read" further down the page has to be
   // describing the same document, not a fixture.
-  const { card: result, setCard } = useCard();
+  const { card: result, setCard, setPrediction } = useCard();
   const [reading, setReading] = useState<boolean>(false);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -200,7 +204,32 @@ export function CardUpload() {
         setFailure(error.message?.[mr ? "mr" : "en"] ?? null);
         return;
       }
-      setCard(payload as CardReadResult);
+      const read = payload as CardReadResult;
+      setCard(read);
+
+      // Straight on to the three models. Deliberately not awaited into the
+      // button's pending state: the readings are already on screen and useful,
+      // and holding them back behind a CNN forward pass would make the fast
+      // half of the answer wait for the slow half. A failure here leaves the
+      // prediction section on its worked example, which it labels as such.
+      void (async () => {
+        const predictBody = new FormData();
+        predictBody.append("documentId", read.id);
+        if (soil.picked) {
+          predictBody.append("soil", soil.picked.file, soil.picked.file.name);
+        }
+        try {
+          const predicted = await fetch("/api/predict", {
+            method: "POST",
+            body: predictBody,
+          });
+          if (!predicted.ok) return;
+          if (submission !== submissionRef.current) return;
+          setPrediction((await predicted.json()) as PredictionResult);
+        } catch {
+          // Silent by design — see above.
+        }
+      })();
     } catch {
       if (submission !== submissionRef.current) return;
       setFailure(
@@ -211,7 +240,7 @@ export function CardUpload() {
     } finally {
       if (submission === submissionRef.current) setReading(false);
     }
-  }, [card.picked, soil.picked, mr, setCard]);
+  }, [card.picked, soil.picked, mr, setCard, setPrediction]);
 
   const extracted = result ? readingsFromExtraction(result.soil_metrics) : null;
 

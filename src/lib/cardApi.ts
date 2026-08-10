@@ -13,6 +13,19 @@ import type { CardErrorKind, CardReadResult } from "./cardTypes";
 
 const BASE = (process.env.AGROSENSE_API_BASE ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 
+/**
+ * Proves to the reading service that this request came from the Next server.
+ *
+ * Only meaningful once the service is hosted rather than on localhost — see
+ * `API_KEY` in `backend/config.py`. Unset on both sides is the local default
+ * and stays working; set on one side only is the misconfiguration that shows
+ * up as every card read returning "the service is down".
+ */
+export const serviceHeaders = (): HeadersInit =>
+  process.env.AGROSENSE_API_KEY
+    ? { "X-AgroSense-Key": process.env.AGROSENSE_API_KEY }
+    : {};
+
 export class CardError extends Error {
   constructor(
     readonly kind: CardErrorKind,
@@ -48,6 +61,7 @@ export async function readCard(file: File): Promise<CardReadResult> {
     response = await fetch(`${BASE}/api/ingest`, {
       method: "POST",
       body,
+      headers: serviceHeaders(),
       // A photograph goes through OCR, which is measured in seconds, not
       // milliseconds. Still bounded — a hung request must not hold the
       // farmer's page open indefinitely.
@@ -90,6 +104,7 @@ export type ServiceHealth = {
 export async function serviceHealth(): Promise<ServiceHealth | null> {
   try {
     const response = await fetch(`${BASE}/api/health`, {
+      headers: serviceHeaders(),
       signal: AbortSignal.timeout(3_000),
       cache: "no-store",
     });

@@ -14,17 +14,17 @@ import {
   PREDICTED_CROPS,
   PREDICTED_FERTILIZERS,
   PREDICTED_SOIL,
+  findFertPrediction,
   applyCount,
   verdictLabel,
   verdictTint,
-  type CropPrediction,
-  type FertPrediction,
+  type FertVerdict,
 } from "@/data/prediction";
 import { Section } from "@/components/ui/Section";
 import { Reveal } from "@/components/ui/Reveal";
 import { Deck } from "@/components/ui/Deck";
-import { ArcGauge } from "@/components/ui/ArcGauge";
-import { Logo } from "./Logo";
+import { useCard } from "@/lib/cardState";
+import { fromApi } from "@/data/predictionFromApi";
 
 /**
  * The three models, on one board.
@@ -43,7 +43,21 @@ import { Logo } from "./Logo";
 export function Prediction() {
   const { lang } = useLang();
   const mr = lang === "mr";
-  const buys = applyCount();
+  const { prediction } = useCard();
+
+  // A real prediction replaces the worked example outright. Where the models
+  // returned something the site has no card for, the row is simply shorter —
+  // never padded from the fixture, because a mix of measured and invented
+  // results with nothing to tell them apart is the failure this whole page is
+  // built to avoid.
+  const live = prediction ? fromApi(prediction) : null;
+
+  const soil = live?.soil ?? (live ? null : PREDICTED_SOIL);
+  const crops = live ? live.crops : PREDICTED_CROPS;
+  const fertilizers = live ? live.fertilizers : PREDICTED_FERTILIZERS;
+  const buys = live
+    ? fertilizers.filter((f) => f.verdict === "apply").length
+    : applyCount();
 
   return (
     <Section
@@ -58,37 +72,117 @@ export function Prediction() {
           : "The soil named, the crops that suit it ranked, and what to feed each one — including which bags to walk past."
       }
     >
-      {/* Not negotiable while this is a fixture: a farmer must never mistake a
-          demonstration for their own result and buy fertilizer against it. */}
+      {/* The standing notice, promoted rather than deleted: it now states
+          where the result came from instead of warning that it came from
+          nowhere. A farmer must never mistake a demonstration for their own
+          result and buy fertilizer against it. */}
       <Reveal className="mt-8">
         <p
           role="status"
-          className="rounded-[var(--radius-card)] border border-haldi/50 bg-haldi-wash px-4 py-3 text-[14px] leading-relaxed text-haldi-ink"
+          className={cn(
+            "rounded-[var(--radius-card)] border px-4 py-3 text-[14px] leading-relaxed",
+            live
+              ? "border-leaf/40 bg-leaf-wash text-leaf-deep"
+              : "border-haldi/50 bg-haldi-wash text-haldi-ink",
+          )}
         >
-          <strong className="font-semibold">
-            {mr ? "नमुना अंदाज. " : "Sample prediction. "}
-          </strong>
-          {mr
-            ? "तिन्ही मॉडेल अजून जोडलेली नाहीत — खालचा निकाल नमुन्याचा आहे, तुमच्या शेताचा नाही."
-            : "None of the three models is wired up yet — what follows is a worked example, not a reading of your field."}
+          {live ? (
+            <>
+              <strong className="font-semibold">
+                {mr ? "तुमच्या पत्रिकेवरून. " : "From your card. "}
+              </strong>
+              {live.soilApplied
+                ? mr
+                  ? "मातीचा फोटो आणि पत्रिकेवरचे आकडे — दोन्ही वापरले आहेत."
+                  : "Your soil photo and your card's readings, both used."
+                : mr
+                  ? "पत्रिकेवरच्या आकड्यांवरून. मातीचा फोटो दिला नव्हता, त्यामुळे मातीचा प्रकार ओळखलेला नाही."
+                  : "From the card's readings alone — no soil photo was sent, so the soil type has not been identified."}
+              {live.needsReview
+                ? mr
+                  ? " आकडे फोटोतून वाचले असल्याने ते आधी तपासून घ्या."
+                  : " The readings came from a photo, so check them before acting on this."
+                : ""}
+            </>
+          ) : (
+            <>
+              <strong className="font-semibold">
+                {mr ? "नमुना अंदाज. " : "Sample prediction. "}
+              </strong>
+              {mr
+                ? "वर तुमची पत्रिका दिलीत की इथले निकाल तुमच्या शेताचे होतील. तोपर्यंत हा नमुना आहे."
+                : "Add your card above and these become your field's. Until then this is a worked example."}
+            </>
+          )}
         </p>
       </Reveal>
 
-      <Reveal className="mt-6">
-        <SoilWidget />
-      </Reveal>
+      {/* Soil, then crops, then fertilizer — the order the product works in,
+          and now three decks in one visual language rather than a panel
+          followed by two carousels. */}
+      {soil ? (
+        <DeckBlock
+          icon={<Layers className="size-[18px]" strokeWidth={1.9} aria-hidden />}
+          title={mr ? "ओळखलेली माती" : "Soil, classified"}
+          note={mr ? `${soil.score}% खात्री` : `${soil.score}% confidence`}
+        >
+          {/* One card, so no `<Deck>`: a carousel with a single slide and one
+              pagination dot is a control that cannot be operated.
+
+              The width, the centring and the vertical padding are copied from
+              the deck's scroller (`px-[calc(50%-8.75rem)] py-8`) rather than
+              chosen, because this card sits directly above two decks and any
+              difference reads as a mistake rather than as a distinction. */}
+          <div className="relative isolate flex justify-center py-8">
+            {/* The bloom. Two decks below this one glow — the crop deck green,
+                the fertilizer deck gold — and without it the soil card was the
+                one piece of model output sitting on flat paper.
+
+                Drawn as light behind the card rather than as a shadow under
+                it: a single centred card has nothing to cast onto, and the
+                subject is soil lit from above. Green, because green is what
+                this site reserves for model output.
+
+                `-z-10` with `isolate` on the parent keeps it behind the card
+                and out of the section's stacking context, so it cannot bleed
+                over the deck heading above. */}
+            <div
+              className="pointer-events-none absolute inset-0 -z-10"
+              aria-hidden
+            >
+              {/* The hue has to change with the theme, and not for taste.
+                  `leaf` is a deep standing-crop green on paper — blurred over
+                  a near-white page it produces grey haze, which reads as dirt
+                  on the screen rather than as light. So paper takes the paler
+                  `leaf-3`, which blooms, and the dark theme takes `leaf`,
+                  which there is a bright lime. */}
+              <div
+                className="absolute top-1/2 left-1/2 h-[24rem] w-[34rem] -translate-x-1/2 -translate-y-1/2 opacity-70 blur-[56px] [--glow:var(--color-leaf-3)] dark:opacity-75 dark:[--glow:var(--color-leaf)]"
+                style={{
+                  background:
+                    "radial-gradient(closest-side, var(--glow) 0%, color-mix(in oklab, var(--glow) 55%, transparent) 48%, transparent 100%)",
+                }}
+              />
+            </div>
+
+            <div className="w-[17.5rem] sm:w-[22rem]">
+              <SoilPallet pick={soil} />
+            </div>
+          </div>
+        </DeckBlock>
+      ) : null}
 
       <DeckBlock
         icon={<Sprout className="size-[18px]" strokeWidth={1.9} aria-hidden />}
         title={mr ? "शिफारस केलेली पिकं" : "Crops we'd plant"}
         note={
           mr
-            ? `${PREDICTED_CROPS.length} पिकं, जुळणीच्या क्रमाने`
-            : `${PREDICTED_CROPS.length} crops, best match first`
+            ? `${crops.length} पिकं, जुळणीच्या क्रमाने`
+            : `${crops.length} crops, best match first`
         }
       >
         <Deck label={mr ? "शिफारस केलेली पिकं" : "Recommended crops"} glow="leaf">
-          {PREDICTED_CROPS.map((p) => (
+          {crops.map((p) => (
             <CropPallet key={p.key} pick={p} />
           ))}
         </Deck>
@@ -99,14 +193,14 @@ export function Prediction() {
         title={mr ? "खतांचा सल्ला" : "Fertilizer plan"}
         note={
           mr
-            ? `${PREDICTED_FERTILIZERS.length} पैकी ${buys} घ्यायची`
-            : `${buys} of ${PREDICTED_FERTILIZERS.length} worth buying`
+            ? `${fertilizers.length} पैकी ${buys} घ्यायची`
+            : `${buys} of ${fertilizers.length} worth buying`
         }
       >
         {/* Gold, not green — the fertilizer deck blooms in turmeric so the two
             decks read as two different answers at a glance in the dark. */}
         <Deck label={mr ? "खतांचा सल्ला" : "Fertilizer plan"} glow="haldi">
-          {PREDICTED_FERTILIZERS.map((p) => (
+          {fertilizers.map((p) => (
             <FertPallet key={p.key} pick={p} />
           ))}
         </Deck>
@@ -147,164 +241,68 @@ function DeckBlock({
 /* ---- The soil ----------------------------------------------------------- */
 
 /**
- * A cut through the ground.
+ * The soil, as one card.
  *
- * This was a two-column banner — photograph left, text right — and it was the
- * flattest thing on a board of 3D pallets, with a strip of dead space down the
- * middle. Worse, it was shaped like every other card on the internet and said
- * nothing about its subject.
+ * This used to be a full-width panel — an arc gauge, retention and pH chips, a
+ * three-row bar chart of what the classifier also considered, and a large
+ * photographic strip below a hairline. Several screens of weight for a single
+ * word of output, sitting directly above two compact carousels that say more
+ * with less. Beside them it read as a different product.
  *
- * So the card is drawn as the thing it describes: paper above the line is the
- * air, a surface rule crosses it with the logo's shoot breaking through, and
- * the photograph runs full-bleed underneath as the earth. Soil belongs at the
- * bottom of the frame, and putting it there is most of the idea.
- *
- * The confidence takes `<ArcGauge>` — the dot-matrix semicircle PLAN.md §7
- * held in reserve precisely because "it reads as an instrument rather than a
- * chart". This is the first place on the public site that has earned it.
- *
- * And the runners-up become a distribution rather than a sentence. A softmax
- * has a shape, that shape is how you tell a confident call from a coin flip,
- * and "also considered: red soil 6%" throws it away.
+ * So it is now a pallet in the same language as `CropPallet`: the photograph,
+ * the name, the calibrated confidence. The gauge and the full distribution
+ * moved to `/prediction/soil/[key]`, which is where somebody who wants that
+ * detail is already heading, and the runner-up stays here because "laterite,
+ * but it could be red" is a materially different answer from "laterite" and
+ * belongs next to the claim, not one click away.
  */
-function SoilWidget() {
+function SoilPallet({
+  pick,
+}: {
+  pick: { key: string; score: number; alternatives: { key: string; score: number }[] };
+}) {
   const { lang } = useLang();
   const mr = lang === "mr";
-  const p = PREDICTED_SOIL;
-  const soil = SOILS.find((s) => s.key === p.key);
+  const soil = SOILS.find((s) => s.key === pick.key);
   if (!soil) return null;
 
-  const src = photo(soil.img);
   const retention = retentionLabel[soil.retention];
-
-  const spread = [{ key: p.key, score: p.score }, ...p.alternatives];
+  const runnerUp = pick.alternatives[0];
+  const runnerUpSoil = runnerUp ? SOILS.find((s) => s.key === runnerUp.key) : undefined;
 
   return (
-    <Link
+    <Pallet
       href={`/prediction/soil/${soil.key}`}
-      className="group block overflow-hidden rounded-[var(--radius-photo)] border border-line bg-surface transition-colors hover:border-leaf/45"
-      style={{ boxShadow: "var(--shadow-card)" }}
+      src={photo(soil.img)}
+      alt={mr ? soil.mr : soil.en}
     >
-      {/* ---- Above the line. ------------------------------------------- */}
-      <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-6 p-6 sm:p-7">
-        <div className="min-w-0">
-          <p className="eyebrow text-ink-mute">
-            {mr ? "ओळखलेली माती" : "Soil, classified"}
-          </p>
-
-          <h3 className="section-head mt-3 text-[1.75rem] text-ink sm:text-[2.1rem]">
-            {mr ? soil.mr : soil.en}
-          </h3>
-          <p className="mt-1 text-[15px] text-ink-mute">
-            {mr ? soil.en : soil.mr}
-          </p>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span
-              className={cn(
-                "rounded-full px-2.5 py-1 text-[13px] font-semibold",
-                retentionTint[soil.retention],
-              )}
-            >
-              {mr ? retention.mr : retention.en}
-            </span>
-            <span className="tnum rounded-full bg-surface px-2.5 py-1 text-[13px] font-semibold text-ink-mute ring-1 ring-line">
-              {mr ? "सामू ४.५–६.०" : "pH 4.5–6.0"}
-            </span>
-          </div>
-        </div>
-
-        {/* The instrument. */}
-        <ArcGauge
-          value={p.score}
-          display={`${p.score}%`}
-          label={mr ? "खात्री" : "confidence"}
-          className="w-[8.5rem] shrink-0 sm:w-[10rem]"
-        />
-      </div>
-
-      {/* ---- The distribution. What the classifier actually returned. --- */}
-      <div className="px-6 pb-7 sm:px-7">
-        <p className="eyebrow text-ink-mute">
-          {mr ? "मॉडेलने काय काय तपासलं" : "What the model weighed"}
-        </p>
-        <ul className="mt-3 space-y-2">
-          {spread.map((row, i) => {
-            const other = SOILS.find((s) => s.key === row.key);
-            const winner = i === 0;
-            return (
-              <li key={row.key} className="flex items-center gap-3">
-                <span
-                  className={cn(
-                    "w-[7.5rem] shrink-0 truncate text-[14px] sm:w-[9rem]",
-                    winner ? "font-semibold text-ink" : "text-ink-mute",
-                  )}
-                >
-                  {other ? (mr ? other.mr : other.en) : row.key}
-                </span>
-                <span className="h-2 flex-1 overflow-hidden rounded-full bg-leaf-1">
-                  <span
-                    className={cn(
-                      "block h-full rounded-full",
-                      winner ? "bg-leaf" : "bg-leaf-3",
-                    )}
-                    style={{ width: `${row.score}%` }}
-                  />
-                </span>
-                <span
-                  className={cn(
-                    "tnum w-10 shrink-0 text-right text-[13px]",
-                    winner ? "font-semibold text-ink" : "text-ink-mute",
-                  )}
-                >
-                  {row.score}%
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
-      {/* ---- The surface, with the shoot through it. -------------------
-              `z-10` is load-bearing: the chip hangs half below the line, and
-              the ground below it comes later in the DOM — without a stacking
-              order the photograph paints over the bottom half of the shoot and
-              slices it in two. */}
-      <div className="relative z-10 h-px bg-ink/15">
-        <span className="absolute -top-[18px] left-6 grid size-9 place-items-center rounded-full border border-line bg-surface text-leaf sm:left-7">
-          <Logo className="size-5" />
+      <div className="flex items-start justify-between gap-3">
+        <span className="tnum rounded-full bg-chalk/15 px-2.5 py-1 text-[13px] font-semibold text-chalk ring-1 ring-chalk/25 backdrop-blur-sm">
+          {pick.score}% {mr ? "खात्री" : "sure"}
+        </span>
+        <span
+          className={cn(
+            "rounded-full px-2.5 py-1 text-[12px] font-semibold",
+            retentionTint[soil.retention],
+          )}
+        >
+          {mr ? retention.mr : retention.en}
         </span>
       </div>
 
-      {/* ---- Below the line: the ground itself. ------------------------ */}
-      <div className="relative h-36 overflow-hidden bg-leaf-wash sm:h-44">
-        {src ? (
-          <Image
-            src={src}
-            alt={mr ? soil.mr : soil.en}
-            fill
-            sizes="(max-width: 1280px) 100vw, 1216px"
-            className="object-cover transition-transform duration-[1.2s] ease-[var(--ease-regur)] group-hover:scale-105"
-          />
-        ) : null}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "linear-gradient(180deg, rgba(7,12,9,.30) 0%, rgba(7,12,9,.52) 62%, rgba(7,12,9,.74) 100%)",
-          }}
-          aria-hidden
-        />
-        <p className="absolute bottom-5 left-6 inline-flex items-center gap-1.5 text-[15px] font-semibold text-chalk sm:left-7">
-          {mr ? "सविस्तर पहा" : "See the detail"}
-          <ArrowRight
-            className="size-4 transition-transform duration-300 group-hover:translate-x-1"
-            strokeWidth={2}
-            aria-hidden
-          />
+      <PalletFoot lead={mr ? soil.mr : soil.en} sub={mr ? soil.en : soil.mr} />
+
+      {/* The second guess, kept on the card. A classifier trained on 28 real
+          photographs of some of these soils is not entitled to state one
+          answer and stop talking. */}
+      {runnerUpSoil ? (
+        <p className="mt-1.5 text-[12px] text-mist">
+          {mr ? "किंवा " : "or "}
+          {mr ? runnerUpSoil.mr : runnerUpSoil.en}
+          <span className="tnum"> {runnerUp.score}%</span>
         </p>
-      </div>
-    </Link>
+      ) : null}
+    </Pallet>
   );
 }
 
@@ -391,7 +389,7 @@ function PalletFoot({
   );
 }
 
-function CropPallet({ pick }: { pick: CropPrediction }) {
+function CropPallet({ pick }: { pick: { key: string; score: number } }) {
   const { lang } = useLang();
   const mr = lang === "mr";
   const crop = CROPS.find((c) => c.key === pick.key);
@@ -427,16 +425,28 @@ function CropPallet({ pick }: { pick: CropPrediction }) {
   );
 }
 
-function FertPallet({ pick }: { pick: FertPrediction }) {
+/**
+ * `pick` carries only what a model can produce — a key, a score and a verdict.
+ * The dose and the crop list are editorial, written by hand in
+ * `prediction.ts`, and are looked up rather than required: a live prediction
+ * for a bag nobody has written copy for should still render as a card, just
+ * without the sentence underneath.
+ */
+function FertPallet({
+  pick,
+}: {
+  pick: { key: string; score: number; verdict: FertVerdict };
+}) {
   const { lang } = useLang();
   const mr = lang === "mr";
   const fert = FERTILIZERS.find((f) => f.key === pick.key);
   if (!fert) return null;
 
+  const editorial = findFertPrediction(pick.key);
   const verdict = verdictLabel[pick.verdict];
   // Which of your crops this bag is for — the crop→fertilizer link, kept
   // visible now that the two decks scroll independently of each other.
-  const forCrops = pick.crops
+  const forCrops = (editorial?.crops ?? [])
     .map((k) => CROPS.find((c) => c.key === k))
     .filter((c): c is NonNullable<typeof c> => Boolean(c))
     .map((c) => (mr ? c.mr : c.en))
@@ -464,7 +474,7 @@ function FertPallet({ pick }: { pick: FertPrediction }) {
 
       <PalletFoot
         lead={mr ? fert.mr : fert.en}
-        sub={mr ? pick.dose.mr : pick.dose.en}
+        sub={editorial ? (mr ? editorial.dose.mr : editorial.dose.en) : fert.name}
         meta={
           forCrops ? (
             <p className="mt-2 truncate text-[13px] text-mist/85">

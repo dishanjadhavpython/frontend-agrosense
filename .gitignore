@@ -50,3 +50,12 @@ data-sourse/
 backend/data/
 __pycache__/
 *.pyc
+
+# Model artifacts and the rebuilt image dataset: regenerate with ml/*.py
+ML/models/
+ml/data/
+
+# The soil image training set — 354 MB of photographs, and the source `git add
+# -A` would have quietly staged. The models trained from it are what the app
+# needs, and those are built into the container image rather than committed.
+data set of the project/

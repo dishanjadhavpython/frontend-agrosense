@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Python virtualenvs. scikit-learn and torch ship .js files inside their
+    // site-packages, and listing globalIgnores at all replaces the defaults
+    // that would have skipped them — so `npm run lint` was reporting 77
+    // problems in vendored library code and none in ours.
+    "**/.venv/**",
   ]),
 ]);
 

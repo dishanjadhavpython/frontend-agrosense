@@ -5,6 +5,7 @@ import { photo } from "@/lib/assets";
 import { SOILS, retentionLabel, retentionTint } from "@/data/soils";
 import { CROPS } from "@/data/crops";
 import { PREDICTED_CROPS, type SoilPrediction } from "@/data/prediction";
+import { Insights } from "./Insights";
 import { Badge, DetailPage, type DetailLink } from "./DetailPage";
 
 /** The classified soil, and everything the recommender put on it. */
@@ -57,6 +58,7 @@ export function SoilDetail({ pick }: { pick: SoilPrediction }) {
       facts={pick.facts}
       notes={pick.notes}
       links={links}
+      insights={<Insights category="soil" slug={pick.key} />}
       linksTitle={mr ? "या मातीत काय लावायचं" : "What we'd plant in it"}
     />
   );

@@ -1,7 +1,42 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# This has to run before numpy, scikit-learn, xgboost or torch are imported,
+# which is why it sits at the top of the module every other module imports
+# first.
+#
+# torch and scikit-learn each ship their own copy of `libomp.dylib`. Loading
+# both into one process and letting them each spin up a thread pool segfaults
+# on macOS — the reading service died with SIGSEGV the first time a single
+# request touched the soil classifier and the crop model together. Pinning
+# OpenMP to one thread avoids it.
+#
+# It costs nothing here in any case: this process serves one request at a time
+# and every model is small, so the thread pools were oversubscription rather
+# than speed. `KMP_DUPLICATE_LIB_OK` is the more commonly cited fix and it did
+# *not* hold — it survived the classifier and still crashed on the crop model.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+
+# ---------------------------------------------------------------------------
+# Next.js loads `.env.local` then `.env` on its own; this process does not get
+# that for free, and without it every key below reads as absent. The agent
+# pipeline then disabled itself on a machine whose `.env` had a perfectly good
+# OPENAI_API_KEY in it — silently, because "no key" is a supported state.
+#
+# Same precedence as Next so one file means one thing in both halves of the
+# app: `.env.local` wins over `.env`, and a variable already exported into the
+# environment wins over both (`override=False` is the default), so
+# `AGROSENSE_DATA_DIR=... uvicorn ...` still works.
+from dotenv import load_dotenv  # noqa: E402
+
+_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_ROOT / ".env.local")
+load_dotenv(_ROOT / ".env")
 
 """
 Configuration for the reading service.
@@ -22,6 +57,7 @@ Two rules this file follows and the old one did not:
 """
 
 BACKEND_DIR = Path(__file__).resolve().parent
+ROOT_DIR = BACKEND_DIR.parent
 
 # Everything the service writes lives under one directory, so clearing state is
 # `rm -rf backend/data` and nothing else.
@@ -38,6 +74,23 @@ def _flag(name: str, default: bool) -> bool:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
+
+# --- Access ---------------------------------------------------------------
+#
+# This service has no user accounts and never did: it trusted the network, on
+# the assumption written at the top of `app.py` that only the Next server can
+# reach it. Hosting it means that assumption stops holding — a public URL is
+# reachable by everyone, and `/api/ingest` accepts a 10 MB file and spends CPU
+# on OCR for anyone who asks.
+#
+# So: one shared secret, sent by the Next route handlers as `X-AgroSense-Key`.
+# Not a user identity, and not trying to be — it is the network boundary that
+# was lost, put back in a header.
+#
+# Empty means open, which keeps `git clone && npm run api` working with no
+# configuration. That default is only safe because it is also the default for
+# binding to 127.0.0.1; set this before the service has a public address.
+API_KEY = os.getenv("AGROSENSE_API_KEY", "").strip()
 
 # --- Uploads --------------------------------------------------------------
 #
@@ -73,5 +126,80 @@ OLLAMA_ENABLED = _flag("AGROSENSE_OLLAMA_ENABLED", True)
 OLLAMA_REQUEST_TIMEOUT_SECONDS = float(os.getenv("AGROSENSE_OLLAMA_TIMEOUT_SECONDS", "90"))
 OLLAMA_TEMPERATURE = float(os.getenv("AGROSENSE_OLLAMA_TEMPERATURE", "0.2"))
 
+# --- Research agents ------------------------------------------------------
+#
+# Four agents (Planner -> Research -> Creator -> Reviewer) that gather current
+# Indian information — schemes, techniques, government prices, video — for the
+# crops, soils and fertilizers the models actually predicted. See AGENTS_PLAN.md.
+#
+# The whole subsystem is a no-op without an OpenAI key, which is deliberate: a
+# fresh checkout should run the card reader and the three models without
+# needing an account anywhere.
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+AGENTS_MODEL = os.getenv("AGROSENSE_AGENTS_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+
+#: Optional. YouTube Data API v3 (free tier). With it the research agent's
+#: `search_youtube` tool returns real videos — title, channel, thumbnail;
+#: without it, one link to a YouTube search page for the topic. The MCP server
+#: imports this name, so its absence here was not a missing feature but an
+#: ImportError on every call to the tool.
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "").strip()
+
+_agents_enabled_raw = os.getenv("AGROSENSE_AGENTS_ENABLED")
+AGENTS_ENABLED = (
+    bool(OPENAI_API_KEY)
+    if _agents_enabled_raw is None
+    else _agents_enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
+)
+
+#: How long a topic's report stays fresh. A farmer opening the same crop page
+#: twice in an afternoon must not trigger two research runs.
+AGENTS_INTERVAL_HOURS = float(os.getenv("AGROSENSE_AGENTS_INTERVAL_HOURS", "8"))
+
+#: Topics refreshed per cycle. Each costs roughly four LLM calls, so this is
+#: the ceiling on spend per cycle rather than a performance tuning knob.
+AGENTS_BATCH_SIZE = int(os.getenv("AGROSENSE_AGENTS_BATCH_SIZE", "6"))
+
+#: How often the scheduler looks for work. Shorter than the refresh interval on
+#: purpose: a topic predicted for the first time should not wait up to 8 hours
+#: for its first report, it should be picked up at the next sweep.
+AGENTS_SWEEP_MINUTES = float(os.getenv("AGROSENSE_AGENTS_SWEEP_MINUTES", "30"))
+
+AGENTS_RUN_ON_STARTUP_IF_STALE = _flag("AGROSENSE_AGENTS_RUN_ON_STARTUP", True)
+
+AGENT_REPORTS_DIR = Path(
+    os.getenv("AGROSENSE_AGENT_REPORTS_DIR", str(DATA_DIR / "agent_reports"))
+).resolve()
+
+#: Government price data. Free key from https://data.gov.in — without it the
+#: price section is reported as unavailable rather than filled in by a language
+#: model, which is the point of sourcing prices from an API at all.
+DATA_GOV_IN_API_KEY = os.getenv("DATA_GOV_IN_API_KEY", "").strip()
+
+#: This product is Marathi-first and its reference card is from Palghar
+#: district, so mandi prices default to Maharashtra.
+DEFAULT_PRICE_STATE = os.getenv("AGROSENSE_PRICE_STATE", "Maharashtra").strip()
+
+
+def soil_classes() -> list[str]:
+    """The soil types the classifier can actually return.
+
+    Read from the trained model's own metadata rather than hard-coded. The
+    previous constant said four while the model had been retrained to eight,
+    which would have left half the soil detail pages with no research topic and
+    therefore no content — a silent gap, since nothing errors when a topic
+    simply does not exist.
+    """
+    classes_file = ROOT_DIR / "ML" / "models" / "soil_classes.json"
+    if classes_file.exists():
+        try:
+            return list(json.loads(classes_file.read_text()))
+        except (json.JSONDecodeError, OSError):
+            pass
+    # Only reached before the first training run.
+    return ["alluvial", "black", "cinder", "clay", "laterite", "peat", "red", "yellow"]
+
+
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+AGENT_REPORTS_DIR.mkdir(parents=True, exist_ok=True)

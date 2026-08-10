@@ -1,0 +1,46 @@
+# Build context for backend/Dockerfile — the Python reading service.
+#
+# The context has to be the repo root rather than backend/, because the trained
+# models live in ML/models/ and the service resolves them as <root>/ML/models.
+# That makes this file load-bearing: the root also holds 2.9 GB of things the
+# image must never see.
+
+# --- Never in an image -----------------------------------------------------
+# Secrets. config.py reads .env at import, so a copy baked into the layer would
+# be a real key sitting in the registry. The host supplies these as environment
+# variables instead, and load_dotenv() on a missing file is a no-op.
+.env
+.env.*
+
+# --- Weight ----------------------------------------------------------------
+.venv/                      # 1.1 GB, and macOS wheels are wrong for linux anyway
+node_modules/               # 551 MB, frontend only
+.next/                      # 668 MB of build output
+data set of the project/    # 354 MB of training images
+aws p2 work properly/       # 257 MB, the previous deployment
+data-sourse/                # 28 MB of source photography
+ML/data/                    # rebuilt image dataset
+
+# Runtime state, not build input. Uploaded cards, the vector index and the
+# agent reports belong on the mounted volume, not in the image — baking them in
+# would ship one machine's uploads to every deploy.
+backend/data/
+
+# --- Not the service -------------------------------------------------------
+src/
+public/
+.git/
+.github/
+.idea/
+.claude/
+*.ipynb
+tsconfig*.json
+next.config.ts
+postcss.config.mjs
+eslint.config.mjs
+package*.json
+
+# --- Noise -----------------------------------------------------------------
+__pycache__/
+*.pyc
+.DS_Store

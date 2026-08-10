@@ -1,0 +1,64 @@
+# The reading service on Fly.io.
+#
+# Fly rather than Render or Railway for one specific reason: `fly deploy` builds
+# from the working directory, while those build from a git push. The trained
+# models are 64 MB and `.gitignore` deliberately excludes `ML/models/` — on a
+# git-based host they would have to be committed, and a 64 MB binary blob in the
+# repo is a worse problem than a slightly longer deploy command.
+#
+#   fly launch --no-deploy --copy-config    # first time, claims the app name
+#   fly volumes create agrosense_data --size 3 --region bom
+#   fly secrets set OPENAI_API_KEY=... AGROSENSE_API_KEY=...
+#   fly deploy
+#
+# The app name has to be globally unique on Fly; change it here if it is taken.
+
+app = "agrosense-api"
+primary_region = "bom"          # Mumbai. The farmers and the mandi data are both here.
+
+[build]
+  dockerfile = "backend/Dockerfile"
+
+[env]
+  AGROSENSE_DATA_DIR = "/data"
+
+# Uploaded cards, the vector index and every research report. Without this the
+# service still answers, it just starts empty after each deploy — which for the
+# research sweep means paying to regenerate reports it had already written.
+[[mounts]]
+  source = "agrosense_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+
+  # Both settings exist for the background sweep rather than for traffic. The
+  # scheduler is a thread inside this process, so a machine that suspends when
+  # idle is a machine that stops researching — and the sweep is the entire
+  # reason there is anything current on a detail page.
+  auto_stop_machines = false
+  min_machines_running = 1
+
+  # One machine, deliberately. A second would run a second scheduler against the
+  # same volume, researching the same topics twice and billing OpenAI twice.
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 8
+    hard_limit = 16
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"
+    interval = "30s"
+    timeout = "10s"
+    # Importing torch and loading three models takes the better part of a
+    # minute. A tighter grace period kills the machine mid-boot and retries
+    # forever.
+    grace_period = "120s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # torch, an EfficientNet checkpoint and two XGBoost boosters are all resident
+  # at once. 1 GB OOMs on the first prediction that touches the soil model.
+  memory = "2gb"

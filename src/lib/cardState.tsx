@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { CardReadResult } from "./cardTypes";
+import type { CardReadResult, PredictionResult } from "./cardTypes";
 
 /**
  * The card everyone on the page is talking about.
@@ -28,15 +28,36 @@ import type { CardReadResult } from "./cardTypes";
 type CardState = {
   card: CardReadResult | null;
   setCard: (card: CardReadResult | null) => void;
+  /** What the three models made of that card, once it has been asked for. */
+  prediction: PredictionResult | null;
+  setPrediction: (prediction: PredictionResult | null) => void;
   clear: () => void;
 };
 
 const Context = createContext<CardState | null>(null);
 
 export function CardProvider({ children }: { children: ReactNode }) {
-  const [card, setCard] = useState<CardReadResult | null>(null);
-  const clear = useCallback(() => setCard(null), []);
-  const value = useMemo(() => ({ card, setCard, clear }), [card, clear]);
+  const [card, setCardState] = useState<CardReadResult | null>(null);
+  const [prediction, setPrediction] = useState<PredictionResult | null>(null);
+
+  // A new card invalidates the old prediction. Leaving last card's soil and
+  // crops on screen under a new card's readings is the one genuinely dangerous
+  // state on this page — everything below the upload would be describing a
+  // different field.
+  const setCard = useCallback((next: CardReadResult | null) => {
+    setCardState(next);
+    setPrediction(null);
+  }, []);
+
+  const clear = useCallback(() => {
+    setCardState(null);
+    setPrediction(null);
+  }, []);
+
+  const value = useMemo(
+    () => ({ card, setCard, prediction, setPrediction, clear }),
+    [card, setCard, prediction, clear],
+  );
 
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
