@@ -147,7 +147,11 @@ class PhotographedCardTests(unittest.TestCase):
         service = DocumentService()
         for dpi, png in self.images.items():
             with self.subTest(dpi=dpi):
-                result = service.ingest(filename=f"card-{dpi}.png", stream=io.BytesIO(png))
+                result = service.ingest(
+            filename=f"card-{dpi}.png",
+            stream=io.BytesIO(png),
+            owner_id="user_test",
+        )
 
                 self.assertEqual(result["source"], "ocr")
                 self.assertTrue(result["needs_review"])
@@ -164,7 +168,9 @@ class PhotographedCardTests(unittest.TestCase):
     def test_ocr_readings_are_never_presented_as_settled(self) -> None:
         service = DocumentService()
         result = service.ingest(
-            filename="card-150.png", stream=io.BytesIO(self.images[150])
+            filename="card-150.png",
+            stream=io.BytesIO(self.images[150]),
+            owner_id="user_test",
         )
         self.assertTrue(
             all(m["confidence"] == "unconfirmed" for m in result["soil_metrics"])

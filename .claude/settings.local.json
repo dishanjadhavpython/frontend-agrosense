@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(claude plugin *)",
+      "Bash(python3 *)",
+      "Bash(rm -rf agrosense)",
+      "Bash(npx --yes create-next-app@latest agrosense --typescript --tailwind --app --src-dir --import-alias \"@/*\" --eslint --no-turbopack --use-npm --yes)",
+      "Bash(rm -rf /private/tmp/claude-501/-Volumes-dishan-project-frontend-agrosense/d6ccb44e-0d8f-46c3-b4ce-3ed7a94d060d/scratchpad/agrosense/.git /private/tmp/claude-501/-Volumes-dishan-project-frontend-agrosense/d6ccb44e-0d8f-46c3-b4ce-3ed7a94d060d/scratchpad/agrosense/node_modules)",
+      "Bash(rsync -a /private/tmp/claude-501/-Volumes-dishan-project-frontend-agrosense/d6ccb44e-0d8f-46c3-b4ce-3ed7a94d060d/scratchpad/agrosense/ '/Volumes/dishan project/frontend agrosense/')",
+      "Bash(node -e \"const p=require\\('./node_modules/@clerk/nextjs/package.json'\\); console.log\\('version', p.version\\); console.log\\(JSON.stringify\\(p.exports, null, 1\\).slice\\(0,900\\)\\)\")",
+      "Bash(./.venv/bin/python ML/feature_ranges.py)"
+    ]
+  }
+}

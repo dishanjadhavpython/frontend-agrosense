@@ -21,18 +21,18 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 export type Theme = "light" | "dark";
 
-export const THEME_STORAGE_KEY = "agrosense.theme";
 
-/**
- * Runs before the first paint, so the page never flashes white and then
- * blacks out. Kept as a string because it has to be inlined into <head> —
- * anything loaded as a module arrives too late to help.
- *
- * Deliberately unreadable-looking but total: it is wrapped in try/catch
- * because localStorage throws outright in some privacy modes, and a broken
- * theme must never take the whole document down with it.
- */
-export const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem("${THEME_STORAGE_KEY}");if(t!=="dark"&&t!=="light")t="light";document.documentElement.setAttribute("data-theme",t);}catch(e){document.documentElement.setAttribute("data-theme","light");}})();`;
+
+// The pre-paint script and its CSP hash live in `themeScript.ts`, which has
+// no "use client" and no React import — `src/middleware.ts` needs the hash and
+// runs in the edge runtime, where importing this file breaks every request.
+import { THEME_STORAGE_KEY } from "./themeScript";
+
+export {
+  THEME_STORAGE_KEY,
+  THEME_INIT_SCRIPT,
+  THEME_INIT_SCRIPT_HASH,
+} from "./themeScript";
 
 const listeners = new Set<() => void>();
 

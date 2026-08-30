@@ -101,13 +101,54 @@ CROP_TO_FERTILIZER_CROP = {
     "kidneybeans": "pulses", "chickpea": "pulses", "coffee": "oil seeds",
 }
 
-#: What the card + weather supply, in the order the crop model was trained on.
-CROP_FEATURES = ["N", "P", "K", "temperature", "humidity", "ph", "rainfall"]
+#: What the crop model was trained on, in order.
+#
+# N, P and K are absent, and their absence is the fix for the worst bug this
+# pipeline had. Those columns in `Crop_recommendation.csv` are the crop's
+# recommended **fertilizer dose**, not a soil test — every one of its 2,200
+# rows sits in the Soil Health Card's "low" N band, within-crop K varies by a
+# standard deviation of ~3 across a 5-205 column, and the per-crop means are
+# the published ICAR doses (rice 80-48-40 against a recommended 80-40-40).
+#
+# So handing this model a farmer's card reading was never a unit conversion
+# waiting to be found. It was asking a fertilizer table what the soil contained.
+# See `ML/train_crop.py` for the full check.
+#
+# The card still reaches the crop ranking — through `ph`, which is a real soil
+# measurement on both sides, and through the soil photograph via
+# `soil_crop_suitability`. Its nutrients decide the fertilizer, in `_need_score`.
+CROP_FEATURES = ["temperature", "humidity", "ph", "rainfall"]
 
 
 class ModelsUnavailable(RuntimeError):
     """An artifact is missing. The API turns this into a 503 rather than a 500:
     it is a deployment state, not a bug in the request."""
+
+
+class MissingInput(ValueError):
+    """A value the models need was not supplied, and nothing here will invent one.
+
+    Every default this class replaced was a number somebody would have farmed
+    against: `temperature=26.0`, `humidity=68.0`, `moisture=34.0`, `soil_key`
+    falling through to `"loamy"`. They were plausible, which is what made them
+    dangerous — a farmer had no way to tell a recommendation built on their
+    field from one built on an average of nowhere.
+
+    The API turns this into a 422 naming the field, so the answer is a question
+    rather than a guess.
+    """
+
+    def __init__(self, field: str) -> None:
+        self.field = field
+        super().__init__(f"missing required input: {field}")
+
+
+def _require(readings: dict[str, float], field: str) -> float:
+    """Read one input, or refuse. There is deliberately no `default` parameter."""
+    value = readings.get(field)
+    if value is None:
+        raise MissingInput(field)
+    return float(value)
 
 
 @dataclass
@@ -276,16 +317,24 @@ def predict_soil(image_bytes: bytes, *, top_k: int = 3) -> SoilPrediction:
 
 
 def predict_crops(
-    readings: dict[str, float], soil_key: str | None = None, *, top_k: int = 5
+    readings: dict[str, float], soil_key: str, *, top_k: int = 5
 ) -> list[dict[str, Any]]:
     """Rank crops from the card readings, then re-rank for the soil.
 
-    `readings` needs N, P, K, temperature, humidity, ph, rainfall. The card
-    supplies N/P/K/ph; the weather feed supplies the rest.
+    `readings` needs all seven of `CROP_FEATURES`, and every one is required.
+    N, P, K and pH come off the farmer's card and are confirmed by them before
+    they get here; temperature, humidity and rainfall are typed in for the
+    field in question. A blank is an error, never a zero — `readings.get(name,
+    0.0)` used to turn a nitrogen that OCR could not find into a soil with no
+    nitrogen in it, which is a different field and a different answer.
     """
+    # Read the inputs before touching the model. A request missing a value is
+    # refused for free, rather than after several hundred MB of pickle has been
+    # loaded to answer a question that was never askable.
+    row = np.array([[_require(readings, name) for name in CROP_FEATURES]], dtype=np.float32)
+
     model, encoder, scaler = _crop_model()
 
-    row = np.array([[float(readings.get(name, 0.0)) for name in CROP_FEATURES]], dtype=np.float32)
     scaled = scaler.transform(row).astype(np.float32)
     probabilities = model.predict_proba(scaled)[0]
 
@@ -309,52 +358,73 @@ def predict_crops(
 # --------------------------------------------------------------------------
 
 
-def _fertilizer_soil_code(soil_key: str | None) -> int:
-    mapped = SOIL_TO_FERTILIZER_SOIL.get((soil_key or "").lower(), "loamy")
-    return FERTILIZER_SOIL_CODE_MAP.get(mapped, 2)
+def _fertilizer_soil_code(soil_key: str) -> int:
+    """The classifier's soil, in the fertilizer dataset's vocabulary.
+
+    No fallback. This used to answer `"loamy"` for anything it did not
+    recognise — including `None`, which is what it got on every request that
+    carried no soil photograph. A farmer who sent only a card was silently told
+    their ground was loamy and given fertilizer for it.
+
+    `SOIL_TO_FERTILIZER_SOIL` covers all eight classes in `soil_classes.json`,
+    so a miss here is a genuine mismatch between the classifier and this map,
+    and it should be loud.
+    """
+    mapped = SOIL_TO_FERTILIZER_SOIL.get((soil_key or "").lower())
+    if mapped is None:
+        raise MissingInput(f"soil type (no fertilizer mapping for {soil_key!r})")
+    return FERTILIZER_SOIL_CODE_MAP[mapped]
 
 
-def _fertilizer_crop_code(crop_name: str | None) -> int:
-    mapped = CROP_TO_FERTILIZER_CROP.get((crop_name or "").lower(), "paddy")
-    return FERTILIZER_CROP_CODE_MAP.get(mapped, 6)
+def _fertilizer_crop_code(crop_name: str) -> int:
+    """Likewise, with `"paddy"` removed for the same reason."""
+    mapped = CROP_TO_FERTILIZER_CROP.get((crop_name or "").lower())
+    if mapped is None:
+        raise MissingInput(f"crop type (no fertilizer mapping for {crop_name!r})")
+    return FERTILIZER_CROP_CODE_MAP[mapped]
 
 
 def predict_fertilizers(
     readings: dict[str, float],
-    soil_key: str | None,
-    crop_name: str | None,
+    soil_key: str,
+    crop_name: str,
     *,
     top_k: int = 3,
 ) -> list[dict[str, Any]]:
     import pandas as pd
 
+    numeric_columns = ["Temparature", "Humidity", "Moisture"]
+    # Every one of these was a `.get(name, <a number>)`. They were never once
+    # supplied by the caller, so this row was 26°C / 68% / 34% moisture on every
+    # prediction the product has ever made. See `MissingInput`. Read before the
+    # model loads, as in `predict_crops`.
+    #
+    # Nitrogen/Potassium/Phosphorous are gone from here too. The training table
+    # holds them as 4-42 / 0-19 / 0-42; a card reads hundreds of kg/ha, so this
+    # scaler was being handed a value about twenty-four standard deviations out
+    # on every request. The nutrients now reach the answer only through
+    # `_need_score`, which compares each reading to the range printed on that
+    # farmer's own card — a comparison no scale mismatch can reach.
+    row = [
+        _require(readings, "temperature"),
+        _require(readings, "humidity"),
+        _require(readings, "moisture"),
+    ]
+    soil_code = _fertilizer_soil_code(soil_key)
+    crop_code = _fertilizer_crop_code(crop_name)
+
     model, _encoders, scaler, target_encoder, feature_columns = _fertilizer_model()
 
-    numeric_columns = ["Temparature", "Humidity", "Moisture", "Nitrogen", "Potassium", "Phosphorous"]
-    numeric = pd.DataFrame(
-        [[
-            float(readings.get("temperature", 26.0)),
-            float(readings.get("humidity", 68.0)),
-            float(readings.get("moisture", 34.0)),
-            float(readings.get("N", 0.0)),
-            float(readings.get("K", 0.0)),
-            float(readings.get("P", 0.0)),
-        ]],
-        columns=numeric_columns,
-    )
+    numeric = pd.DataFrame([row], columns=numeric_columns)
     scaled = scaler.transform(numeric)[0]
 
     features = {
         "Temparature": scaled[0],
         "Humidity": scaled[1],
         "Moisture": scaled[2],
-        "Soil Type": _fertilizer_soil_code(soil_key),
-        "Crop Type": _fertilizer_crop_code(crop_name),
-        "Nitrogen": scaled[3],
-        "Potassium": scaled[4],
-        "Phosphorous": scaled[5],
+        "Soil Type": soil_code,
+        "Crop Type": crop_code,
         "temp_humidity_interaction": scaled[0] * scaled[1],
-        "nitrogen_phosphorous_interaction": scaled[3] * scaled[5],
     }
     model_input = pd.DataFrame(
         [[features[column] for column in feature_columns]], columns=feature_columns
@@ -470,32 +540,127 @@ def _verdict_for(label: str, readings: dict[str, float]) -> str:
 
 def predict_all(
     readings: dict[str, float],
-    soil_image: bytes | None = None,
+    soil_image: bytes,
 ) -> dict[str, Any]:
-    """Soil (if a photo came), then crops, then fertilizer for the top crop."""
-    soil: SoilPrediction | None = None
-    if soil_image:
-        soil = predict_soil(soil_image)
+    """The photograph names the soil, the soil re-ranks the crops, the top crop
+    and the card's deficits choose the fertilizer.
 
-    soil_key = soil.key if soil else None
-    crops = predict_crops(readings, soil_key)
-    top_crop = crops[0]["name"] if crops else None
-    fertilizers = predict_fertilizers(readings, soil_key, top_crop)
+    `soil_image` is required. It used to be optional, and the optional path was
+    not a smaller answer — it was the same answer computed against `"loamy"`,
+    with `soil_applied: false` as the only sign. Either the ground has been
+    looked at or there is nothing here to say about fertilizer.
+    """
+    soil = predict_soil(soil_image)
+
+    crops = predict_crops(readings, soil.key)
+    if not crops:
+        raise MissingInput("crop ranking (the crop model returned nothing)")
+    top_crop = crops[0]["name"]
+    fertilizers = predict_fertilizers(readings, soil.key, top_crop)
 
     return {
-        "soil": (
-            {
-                "key": soil.key,
-                "confidence": soil.confidence,
-                "alternatives": soil.alternatives,
-                "note": soil.note,
-            }
-            if soil
-            else None
-        ),
+        "soil": {
+            "key": soil.key,
+            "confidence": soil.confidence,
+            "alternatives": soil.alternatives,
+            "note": soil.note,
+        },
         "crops": crops,
         "fertilizers": fertilizers,
-        # Says plainly whether the soil photograph reached the ranking, so the
-        # UI never implies a soil-aware result it did not get.
-        "soil_applied": soil_key is not None,
+        # Always true now that the photograph is required. Kept so the response
+        # shape does not change under clients that still read it.
+        "soil_applied": True,
+        # Which of the three macronutrients had a printed range on the card to
+        # be judged against. `_need_score` is driven by these, so a `null` here
+        # is the difference between "this bag was ruled out" and "nothing on
+        # your card could rule it in or out".
+        "nutrient_status": {
+            nutrient: readings.get(f"{nutrient}_status") for nutrient in ("N", "P", "K")
+        },
+        "out_of_range": training_range_warnings(readings),
     }
+
+
+# --------------------------------------------------------------------------
+# Honesty about scale
+# --------------------------------------------------------------------------
+
+#: `readings` key -> (model name, metadata file, column in that training table).
+#:
+#: Only inputs that actually reach a model appear here, and every one of them is
+#: now the same quantity on both sides — °C against °C, % against %, pH against
+#: pH. That is the point: the mismatched pairs were not made checkable, they
+#: were removed. `N`, `P` and `K` are deliberately absent because neither model
+#: takes them any more.
+#:
+#: This stays because a farmer can still type a number outside what a model
+#: saw — 400 mm of rainfall against a table that stops at 298 — and a
+#: recommendation extrapolated past its training data should say so.
+_RANGE_SOURCES: dict[str, tuple[str, str, str]] = {
+    "temperature": ("crop", "crop_metadata.json", "temperature"),
+    "humidity": ("crop", "crop_metadata.json", "humidity"),
+    "ph": ("crop", "crop_metadata.json", "ph"),
+    "rainfall": ("crop", "crop_metadata.json", "rainfall"),
+    "moisture": ("fertilizer", "fertilizer_metadata.json", "Moisture"),
+}
+
+
+@lru_cache(maxsize=4)
+def _feature_ranges(metadata_name: str) -> dict[str, list[float]]:
+    """What the training table actually contained, or nothing.
+
+    Written by `ML/feature_ranges.py`. Absent metadata is a normal state — an
+    older set of artifacts simply produces no warnings — so this never raises.
+    """
+    path = MODELS_DIR / metadata_name
+    if not path.exists():
+        return {}
+    try:
+        metadata = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+    ranges = metadata.get("feature_ranges")
+    return ranges if isinstance(ranges, dict) else {}
+
+
+def training_range_warnings(readings: dict[str, float]) -> list[dict[str, Any]]:
+    """Inputs that fall outside anything the model that consumes them was
+    trained on.
+
+    This began as a report on a mismatch that could not be fixed: the crop
+    model's `N` ran 0–140 while a Soil Health Card reads 245–700 kg/ha, and
+    there was no honest conversion between them. Reporting it was the most that
+    could be done without inventing a factor.
+
+    Then the columns turned out not to be soil nitrogen at all — they were the
+    crop's recommended fertilizer dose — so the answer was to stop feeding a
+    soil test to a fertilizer table rather than to convert between them. Both
+    models were retrained without N, P and K, and the mismatch is gone rather
+    than annotated.
+
+    What is left is the ordinary case this should always have been: a farmer
+    types 400 mm into a model whose table stops at 298. Every pair checked here
+    is the same quantity in the same unit on both sides, so a warning now means
+    an unusual field, not an incoherent comparison.
+    """
+    warnings: list[dict[str, Any]] = []
+    for field, (model, metadata_name, column) in _RANGE_SOURCES.items():
+        value = readings.get(field)
+        if value is None:
+            continue
+        bounds = _feature_ranges(metadata_name).get(column)
+        if not isinstance(bounds, list) or len(bounds) != 2:
+            continue
+        low, high = float(bounds[0]), float(bounds[1])
+        if low <= float(value) <= high:
+            continue
+        warnings.append(
+            {
+                "field": field,
+                "model": model,
+                "value": round(float(value), 2),
+                "trained_min": round(low, 2),
+                "trained_max": round(high, 2),
+            }
+        )
+    return warnings

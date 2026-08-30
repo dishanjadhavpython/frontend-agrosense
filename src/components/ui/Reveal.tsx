@@ -48,8 +48,28 @@ export function Reveal({
       transition={
         reduced
           ? { duration: 0 }
-          : // --ease-regur. Everything decelerates like settling soil.
-            { duration: 0.7, delay, ease: [0.16, 1, 0.3, 1] }
+          : {
+              // A spring rather than a fixed 0.7s tween.
+              //
+              // A duration-based ease takes the same time however far the
+              // element travels, so a 16px rise and a 40px one feel like the
+              // same gesture played at different speeds — which is what makes
+              // a page read as animated rather than as moving. A spring
+              // settles in proportion to its displacement, so the small ones
+              // arrive quickly and the large ones take their time, and neither
+              // announces itself.
+              //
+              // Critically damped-ish: damping high enough that nothing
+              // overshoots. This is soil settling, not a bounce.
+              type: "spring",
+              stiffness: 140,
+              damping: 22,
+              mass: 0.9,
+              delay,
+              // Below this the element is close enough that another frame of
+              // animation is wasted work on a phone.
+              restDelta: 0.4,
+            }
       }
     >
       {children}

@@ -4,12 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run check:csp-hash && next build",
     "start": "next start",
     "lint": "eslint",
     "api": "./.venv/bin/uvicorn backend.app:app --host 127.0.0.1 --port 8000 --reload",
     "api:install": "./.venv/bin/pip install -r backend/requirements.txt",
-    "api:test": "./.venv/bin/python -m unittest discover -s backend/tests -t ."
+    "api:test": "./.venv/bin/python -m unittest discover -s backend/tests -t .",
+    "check:csp-hash": "node scripts/check-csp-hash.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.6.4",

@@ -6,7 +6,9 @@ import { Menu, X } from "lucide-react";
 import { useLang } from "@/lib/i18n";
 import { useActiveSection } from "@/lib/useActiveSection";
 import { cn } from "@/lib/cn";
+import { SignInButton, UserButton, useAuth } from "@clerk/nextjs";
 import { ButtonLink } from "@/components/ui/Button";
+import { clerkAppearance } from "@/lib/clerkAppearance";
 import { LanguageToggle } from "./LanguageToggle";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
@@ -23,6 +25,7 @@ const SECTIONS = [
 
 export function SiteHeader() {
   const { t, lang } = useLang();
+  const { isLoaded, isSignedIn } = useAuth();
   const active = useActiveSection(SECTIONS);
   const [open, setOpen] = useState(false);
 
@@ -73,13 +76,43 @@ export function SiteHeader() {
         <div className="ml-auto flex items-center gap-2.5">
           <LanguageToggle className="hidden sm:inline-flex" />
           <ThemeToggle />
-          <ButtonLink
-            href="/dashboard"
-            variant="primary"
-            className="hidden px-5 sm:inline-flex"
-          >
-            {t("actGetStarted")}
-          </ButtonLink>
+          {/* Signed out, the primary action is to sign in — not "get started",
+              which pointed at /dashboard, a route that does not exist. Signed
+              in, it becomes the avatar, which is also the way out.
+
+              `<SignedIn>` / `<SignedOut>` are gone in Clerk 7 and their
+              replacement, `<Show>`, is an async server component — unusable in
+              this file, which is `"use client"` because the whole site renders
+              bilingually through `useLang()`. The hook is the client-side
+              equivalent. */}
+          {!isLoaded ? (
+            // A reserved box, not a spinner and not nothing. Clerk resolves in
+            // a few hundred milliseconds and either branch would otherwise
+            // shift the whole header sideways as it lands.
+            <span className="hidden h-12 w-[7.5rem] sm:block" aria-hidden />
+          ) : isSignedIn ? (
+            <UserButton
+              appearance={{
+                ...clerkAppearance,
+                elements: {
+                  ...clerkAppearance.elements,
+                  // Clerk's default avatar is 28px. Every tap target on this
+                  // site clears 44, and this one opens the only menu that can
+                  // sign somebody out.
+                  avatarBox: "size-11",
+                },
+              }}
+            />
+          ) : (
+            <SignInButton mode="modal">
+              <button
+                type="button"
+                className="hidden min-h-12 items-center justify-center rounded-full bg-ink px-5 text-[15px] font-semibold text-paper transition-colors duration-200 hover:bg-leaf-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-leaf sm:inline-flex dark:bg-leaf-5 dark:text-on-light dark:hover:bg-leaf-deep"
+              >
+                {t("actSignIn")}
+              </button>
+            </SignInButton>
+          )}
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
@@ -112,9 +145,20 @@ export function SiteHeader() {
           </nav>
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <LanguageToggle />
-            <ButtonLink href="/dashboard" variant="primary" className="flex-1">
-              {t("actGetStarted")}
-            </ButtonLink>
+            {isSignedIn ? (
+              <ButtonLink href="/#upload" variant="primary" className="flex-1">
+                {t("actTestSoil")}
+              </ButtonLink>
+            ) : (
+              <SignInButton mode="modal">
+                <button
+                  type="button"
+                  className="inline-flex min-h-12 flex-1 items-center justify-center rounded-full bg-ink px-6 text-[15px] font-semibold text-paper hover:bg-leaf-deep dark:bg-leaf-5 dark:text-on-light"
+                >
+                  {t("actSignIn")}
+                </button>
+              </SignInButton>
+            )}
           </div>
         </div>
       ) : null}

@@ -16,7 +16,9 @@ import {
   FolderOpen,
   X,
 } from "lucide-react";
+import { SignInButton, useAuth } from "@clerk/nextjs";
 import { useLang } from "@/lib/i18n";
+import { useCamera } from "@/lib/useCamera";
 import { photo } from "@/lib/assets";
 import { cn } from "@/lib/cn";
 import { SAMPLE_READING, readingsFromExtraction } from "@/data/soilReading";
@@ -30,6 +32,11 @@ import { Section } from "@/components/ui/Section";
 import { Reveal } from "@/components/ui/Reveal";
 import { Button } from "@/components/ui/Button";
 import { CardResult } from "./CardResult";
+import {
+  PredictionInputs,
+  valuesFromCard,
+  type PredictionValues,
+} from "./PredictionInputs";
 
 /**
  * Where the inputs actually go in.
@@ -159,6 +166,11 @@ function usePicked({
 export function CardUpload() {
   const { t, lang } = useLang();
   const mr = lang === "mr";
+  // Reading a card costs OCR and predicting starts agent runs against a paid
+  // key, so both require a real account. Asked here rather than discovered at
+  // the fetch: a farmer should not walk out to photograph their soil and only
+  // then be told to sign in.
+  const { isLoaded: authLoaded, isSignedIn } = useAuth();
 
   // Held above this section: "the card, read" further down the page has to be
   // describing the same document, not a fixture.
@@ -166,21 +178,63 @@ export function CardUpload() {
   const [reading, setReading] = useState<boolean>(false);
   const [failure, setFailure] = useState<string | null>(null);
 
+  // The eight numbers the models run on. Held here rather than inside
+  // `<PredictionInputs>` so that swapping the card refills them and swapping
+  // the soil photo does not — the readings belong to the document, and losing
+  // four typed field conditions because somebody retook a photograph would be
+  // its own small cruelty.
+  const [values, setValues] = useState<PredictionValues | null>(null);
+  const [predicting, setPredicting] = useState<boolean>(false);
+  const [predictFailure, setPredictFailure] = useState<string | null>(null);
+
+  const setValue = useCallback((name: keyof PredictionValues, value: string) => {
+    setValues((current) => (current ? { ...current, [name]: value } : current));
+    // A changed input makes the answer on screen a different field's answer.
+    setPrediction(null);
+    setPredictFailure(null);
+  }, [setPrediction]);
+
   // A new file invalidates the reading on screen. Leaving the old chart up
   // beside a different input is the one genuinely dangerous state here.
   const invalidate = useCallback(() => {
     setCard(null);
     setFailure(null);
+    setPredictFailure(null);
+    // Including the four field conditions. They are not re-derived from a new
+    // card and they are not carried over from the old one — a value that
+    // survives into a different document without being retyped is the kind of
+    // quiet inheritance this whole change exists to remove.
+    setValues(null);
   }, [setCard]);
 
+  // Swapping only the soil photo keeps the card and the typed numbers, but the
+  // prediction it produced is now about a different soil.
+  const invalidateSoil = useCallback(() => {
+    setPrediction(null);
+    setPredictFailure(null);
+  }, [setPrediction]);
+
   const card = usePicked({ allowPdf: true, mr, onChange: invalidate });
-  const soil = usePicked({ allowPdf: false, mr, onChange: invalidate });
+  const soil = usePicked({ allowPdf: false, mr, onChange: invalidateSoil });
 
   // Only ever superseded by a newer submit, never by an older one landing late
   // — a farmer who swaps the card mid-read must not be shown the first card's
   // numbers under the second card's name.
   const submissionRef = useRef(0);
 
+  /**
+   * Step one, and only step one: read the card.
+   *
+   * This used to fire the three models too, in a detached `void (async ...)`
+   * the moment the readings came back. That was defensible while the models
+   * needed nothing but the document id — and it was also how every prediction
+   * came to be computed from four hardcoded weather values, because there was
+   * no moment in the flow at which anybody could have supplied real ones.
+   *
+   * Now the read produces numbers to check and the prediction is a separate,
+   * deliberate act. The reading is still shown the instant it lands; what
+   * waits is the recommendation, which should wait.
+   */
   const submit = useCallback(async () => {
     const file = card.picked?.file;
     if (!file) return;
@@ -188,48 +242,36 @@ export function CardUpload() {
     const submission = ++submissionRef.current;
     setReading(true);
     setFailure(null);
+    setPredictFailure(null);
     setCard(null);
+    setValues(null);
 
     try {
       const body = new FormData();
       body.append("card", file, file.name);
-      if (soil.picked) body.append("soil", soil.picked.file, soil.picked.file.name);
 
       const response = await fetch("/api/card", { method: "POST", body });
-      const payload = await response.json();
+      const payload = await response.json().catch(() => null);
       if (submission !== submissionRef.current) return;
 
       if (!response.ok) {
-        const error = payload as CardErrorBody;
-        setFailure(error.message?.[mr ? "mr" : "en"] ?? null);
+        const error = payload as CardErrorBody | null;
+        // `?? null` used to be the whole story, and a response without the
+        // expected body — an expired session, a proxy error page — showed no
+        // message at all. A failure a farmer cannot read is a failure they
+        // will repeat.
+        setFailure(
+          error?.message?.[mr ? "mr" : "en"] ??
+            (mr
+              ? "पत्रिका वाचता आली नाही. पुन्हा लॉग इन करून प्रयत्न करा."
+              : "The card could not be read. Try signing in again."),
+        );
         return;
       }
       const read = payload as CardReadResult;
       setCard(read);
-
-      // Straight on to the three models. Deliberately not awaited into the
-      // button's pending state: the readings are already on screen and useful,
-      // and holding them back behind a CNN forward pass would make the fast
-      // half of the answer wait for the slow half. A failure here leaves the
-      // prediction section on its worked example, which it labels as such.
-      void (async () => {
-        const predictBody = new FormData();
-        predictBody.append("documentId", read.id);
-        if (soil.picked) {
-          predictBody.append("soil", soil.picked.file, soil.picked.file.name);
-        }
-        try {
-          const predicted = await fetch("/api/predict", {
-            method: "POST",
-            body: predictBody,
-          });
-          if (!predicted.ok) return;
-          if (submission !== submissionRef.current) return;
-          setPrediction((await predicted.json()) as PredictionResult);
-        } catch {
-          // Silent by design — see above.
-        }
-      })();
+      // The four the card carries, prefilled; the four for the field, blank.
+      setValues(valuesFromCard(read));
     } catch {
       if (submission !== submissionRef.current) return;
       setFailure(
@@ -240,13 +282,66 @@ export function CardUpload() {
     } finally {
       if (submission === submissionRef.current) setReading(false);
     }
-  }, [card.picked, soil.picked, mr, setCard, setPrediction]);
+  }, [card.picked, mr, setCard]);
+
+  /**
+   * Step two: the eight confirmed numbers and the soil photograph, to the
+   * three models.
+   *
+   * Awaited into a pending state, unlike the read's old fire-and-forget
+   * prediction. This is the farmer acting on values they entered — a silent
+   * failure here would leave them looking at a worked example believing it was
+   * their field.
+   */
+  const predict = useCallback(async () => {
+    if (!result || !values || !soil.picked) return;
+
+    const submission = ++submissionRef.current;
+    setPredicting(true);
+    setPredictFailure(null);
+    setPrediction(null);
+
+    try {
+      const body = new FormData();
+      body.append("documentId", result.id);
+      body.append("soil", soil.picked.file, soil.picked.file.name);
+      for (const [name, value] of Object.entries(values)) body.append(name, value);
+
+      const response = await fetch("/api/predict", { method: "POST", body });
+      const payload = await response.json().catch(() => null);
+      if (submission !== submissionRef.current) return;
+
+      if (!response.ok) {
+        const error = payload as CardErrorBody | null;
+        setPredictFailure(
+          error?.message?.[mr ? "mr" : "en"] ??
+            (mr
+              ? "अंदाज काढता आला नाही. पुन्हा लॉग इन करून प्रयत्न करा."
+              : "The prediction failed. Try signing in again."),
+        );
+        return;
+      }
+      setPrediction(payload as PredictionResult);
+    } catch {
+      if (submission !== submissionRef.current) return;
+      setPredictFailure(
+        mr
+          ? "अंदाज काढता आला नाही. जोडणी तपासून पुन्हा प्रयत्न करा."
+          : "The prediction could not be made. Check your connection and try again.",
+      );
+    } finally {
+      if (submission === submissionRef.current) setPredicting(false);
+    }
+  }, [result, values, soil.picked, mr, setPrediction]);
 
   const extracted = result ? readingsFromExtraction(result.soil_metrics) : null;
 
   return (
     <Section
       id="upload"
+      // Above the fold on a desktop and one scroll away on a phone. Deferring
+      // its paint would cost a frame rather than save one.
+      eager
       eyebrow={t("secUpload")}
       heading={
         mr ? "पत्रिका इथे द्या, बाकीचं आमच्यावर" : "Hand us the card. That's it."
@@ -257,8 +352,8 @@ export function CardUpload() {
       headingClassName="text-leaf"
       lede={
         mr
-          ? "फोटो काढा किंवा तुमच्याकडची PDF द्या. जुनं कार्ड असलं तरी चालतं. सोबत मातीचा फोटो दिलात तर मातीचा प्रकारही ओळखता येतो."
-          : "Photograph it, or send the PDF you already have. An old card works fine. Add a photo of the soil itself and we can name its type too."
+          ? "फोटो काढा किंवा तुमच्याकडची PDF द्या. जुनं कार्ड असलं तरी चालतं. सोबत मातीचा फोटोही लागतो — मातीचा प्रकार त्यावरूनच ओळखला जातो."
+          : "Photograph it, or send the PDF you already have. An old card works fine. A photo of the soil itself is needed too — that is what names its type."
       }
     >
       <Reveal className="mt-10">
@@ -288,10 +383,10 @@ export function CardUpload() {
               accept="image/*"
               bg="upload/soil.jpg"
               badge={mr ? "माती" : "The soil"}
-              // Named as optional in the badge row rather than the heading —
-              // the heading is the instruction and should read the same as its
-              // neighbour's.
-              optional={mr ? "ऐच्छिक" : "optional"}
+              // No longer marked optional. It was, and the optional path was
+              // not a smaller answer — with no photograph the fertilizer model
+              // was silently told the ground was loamy. Either the soil has
+              // been looked at or there is nothing to say about fertilizer.
               title={mr ? "मातीचा फोटो द्या" : "Add a soil photo"}
               titleTouch={mr ? "मातीचा फोटो काढा" : "Photograph the soil"}
               note={mr ? "JPG · PNG" : "JPG · PNG"}
@@ -318,36 +413,49 @@ export function CardUpload() {
                   quiet outline while it waits, solid the moment there is
                   something to continue with. A greyed-out slab would make the
                   one thing you cannot do the heaviest object on the card. */}
+              {authLoaded && !isSignedIn ? (
+                <SignInButton mode="modal">
+                  <button
+                    type="button"
+                    className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-ink px-6 text-[15px] font-semibold text-paper transition-colors duration-200 hover:bg-leaf-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-leaf sm:w-auto sm:min-w-[13rem] dark:bg-leaf-5 dark:text-on-light dark:hover:bg-leaf-deep"
+                  >
+                    {t("authNeeded")}
+                    <ArrowRight className="size-5" strokeWidth={1.8} aria-hidden />
+                  </button>
+                </SignInButton>
+              ) : (
               <Button
                 type="button"
                 variant={card.picked ? "primary" : "secondary"}
-                disabled={!card.picked || reading}
+                disabled={!card.picked || reading || !authLoaded}
                 onClick={submit}
                 className="w-full disabled:cursor-not-allowed disabled:text-ink-mute disabled:hover:bg-surface sm:w-auto sm:min-w-[13rem]"
               >
-                {reading
-                  ? mr
-                    ? "वाचतो आहे…"
-                    : "Reading…"
-                  : mr
-                    ? "अंदाज काढा"
-                    : "Predict"}
+                {/* Named for what it does. It used to say "Predict" and did
+                    both halves at once; the prediction now happens below,
+                    after somebody has checked the numbers it runs on. */}
+                {reading ? t("fldReading") : t("fldReadCard")}
                 {card.picked && !reading ? (
                   <ArrowRight className="size-5" strokeWidth={1.8} aria-hidden />
                 ) : null}
               </Button>
+              )}
             </div>
 
             {/* Says what the button is waiting for, rather than leaving a
                 disabled control to explain itself. */}
-            {!card.picked ? (
+            {authLoaded && !isSignedIn ? (
+              <p className="mt-3 max-w-[52ch] text-[14px] leading-relaxed text-ink-mute">
+                {t("authWhy")}
+              </p>
+            ) : !card.picked ? (
               <p className="mt-3 text-[14px] text-ink-mute">
                 {soil.picked
                   ? mr
                     ? "मातीचा फोटो मिळाला. आता पत्रिका द्या — बारा आकडे तिच्यावरच असतात."
                     : "Got the soil photo. Now add the card — the twelve readings are on it."
                   : mr
-                    ? "पत्रिका दिल्यावर अंदाज काढता येईल."
+                    ? "पत्रिका दिल्यावर ती वाचता येईल."
                     : "Add your card and this turns on."}
               </p>
             ) : null}
@@ -407,6 +515,22 @@ export function CardUpload() {
               mr={mr}
             />
           ) : null}
+
+          {/* ---- And the numbers those readings become, before they do. ---
+              Inside the same bordered card again: check the figure, correct
+              it if the photograph lied, add what the card cannot know, then
+              predict — one object, in the order it happens. */}
+          {result && values ? (
+            <PredictionInputs
+              result={result}
+              values={values}
+              onChange={setValue}
+              onPredict={predict}
+              predicting={predicting}
+              soilPhotoMissing={!soil.picked}
+              failure={predictFailure}
+            />
+          ) : null}
         </div>
       </Reveal>
     </Section>
@@ -450,6 +574,12 @@ function Dropzone({
   const [dragging, setDragging] = useState(false);
   const src = photo(bg);
   const { picked, error, take, clear, cameraInput, fileInput } = zone;
+  // Hardware, not pointer type. `touch:` (`pointer: coarse`) offered a shutter
+  // to touchscreen laptops with no webcam and refused one to desktops that
+  // have one. `"unknown"` keeps both controls on screen, so nothing appears
+  // late — the camera only ever disappears, once we know there is none.
+  const camera = useCamera();
+  const showCamera = camera !== "none";
 
   return (
     <div
@@ -554,17 +684,15 @@ function Dropzone({
                 if both branches were conditional a device matching neither
                 would get a drop zone with no heading. */}
             <span className="mx-auto grid size-14 place-items-center rounded-full bg-chalk/15 text-chalk ring-1 ring-chalk/30 backdrop-blur-sm">
-              <FileUp className="size-6 touch:hidden" strokeWidth={1.6} aria-hidden />
-              <Camera
-                className="hidden size-6 touch:block"
-                strokeWidth={1.6}
-                aria-hidden
-              />
+              {showCamera ? (
+                <Camera className="size-6" strokeWidth={1.6} aria-hidden />
+              ) : (
+                <FileUp className="size-6" strokeWidth={1.6} aria-hidden />
+              )}
             </span>
 
             <p className="mt-4 text-xl font-semibold text-chalk">
-              <span className="touch:hidden">{title}</span>
-              <span className="hidden touch:inline">{titleTouch}</span>
+              {showCamera ? titleTouch : title}
             </p>
             {/* Drag is the one instruction a phone can't follow. */}
             <p className="mt-1 hidden text-mist mouse:block">
@@ -573,18 +701,24 @@ function Dropzone({
             <p className="mt-1 font-mono text-[12px] text-mist/80">{note}</p>
 
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              {/* Shown whenever the device has a camera, or before we know.
+                  Hidden only once `enumerateDevices` has actually reported no
+                  video input — a dead button is worse than a missing one. */}
+              {showCamera ? (
+                <Button
+                  type="button"
+                  variant="onNight"
+                  onClick={() => cameraInput.current?.click()}
+                >
+                  <Camera className="size-5" strokeWidth={1.8} aria-hidden />
+                  {t("actTakePhoto")}
+                </Button>
+              ) : null}
               <Button
                 type="button"
-                variant="onNight"
-                onClick={() => cameraInput.current?.click()}
-                className="hidden touch:inline-flex"
-              >
-                <Camera className="size-5" strokeWidth={1.8} aria-hidden />
-                {t("actTakePhoto")}
-              </Button>
-              <Button
-                type="button"
-                variant="onNightQuiet"
+                // The quieter of two actions only while there *are* two. With
+                // no camera this is the only way in and should look like it.
+                variant={showCamera ? "onNightQuiet" : "onNight"}
                 onClick={() => fileInput.current?.click()}
               >
                 <FolderOpen className="size-5" strokeWidth={1.8} aria-hidden />

@@ -11,9 +11,14 @@ FIXTURE = Path(__file__).parent / "fixtures" / "soil_health_card_marathi.pdf"
 
 
 class PredictionEngineTests(unittest.TestCase):
-    """Ported from `aws p2 work properly/tests/`. This is the rule-based layer
-    that replaced the quarantined XGBoost/torch models — it needs no artifacts,
-    so it works on a fresh clone."""
+    """The card, read against its own printed ranges. Needs no model artifacts,
+    so it works on a fresh clone.
+
+    This layer used to name a crop too, scored against six hand-written nutrient
+    windows in `CROP_PROFILES`. That was a second crop recommender standing
+    behind the real one with no dataset and no provenance, so it was removed —
+    crops come from the crop model, ranked from readings the farmer confirmed.
+    The tests that asserted on `recommended_crop` went with it."""
 
     METRICS = [
         {
@@ -46,15 +51,20 @@ class PredictionEngineTests(unittest.TestCase):
         },
     ]
 
-    def test_returns_crop_health_and_plan(self) -> None:
+    def test_returns_health_and_plan(self) -> None:
         result = predict_from_metrics(self.METRICS)
 
-        self.assertIn("recommended_crop", result)
         self.assertIn("soil_health", result)
         self.assertIn("fertilizer_plan", result)
-        self.assertNotEqual(result["recommended_crop"]["name"], "Insufficient data")
         self.assertGreaterEqual(result["soil_health"]["score"], 35)
         self.assertTrue(result["fertilizer_plan"])
+
+    def test_names_no_crop(self) -> None:
+        """The guard on the removal. Ingest reports what the card says; it does
+        not decide what to plant, and must not start doing so again."""
+        result = predict_from_metrics(self.METRICS)
+        self.assertNotIn("recommended_crop", result)
+        self.assertNotIn("alternative_crops", result)
 
     def test_high_phosphorus_produces_a_restraint_not_a_purchase(self) -> None:
         # A recommender that only ever says "apply" is a sales channel. The
@@ -67,8 +77,8 @@ class PredictionEngineTests(unittest.TestCase):
 
     def test_no_metrics_reports_insufficient_data_rather_than_a_guess(self) -> None:
         result = predict_from_metrics([])
-        self.assertEqual(result["recommended_crop"]["name"], "Insufficient data")
         self.assertEqual(result["soil_health"]["score"], 0)
+        self.assertEqual(result["soil_health"]["label"], "Insufficient data")
         self.assertEqual(result["input_coverage"]["metrics_found"], 0)
 
 
@@ -98,9 +108,6 @@ class RealCardPredictionTests(unittest.TestCase):
             addressed & {"Available Nitrogen (N)", "Organic Carbon (OC)", "Available Zinc (Zn)"},
             f"plan ignored every deficiency on the card: {addressed}",
         )
-
-    def test_recommends_a_crop(self) -> None:
-        self.assertNotEqual(self.result["recommended_crop"]["name"], "Insufficient data")
 
 
 if __name__ == "__main__":

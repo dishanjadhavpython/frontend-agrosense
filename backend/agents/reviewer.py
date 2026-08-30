@@ -5,6 +5,7 @@ from agents import Agent, Runner
 from ..config import AGENTS_MODEL
 from .context import dated_context
 from .schemas import ReviewResult, TopicReport
+from .mcp_servers.seller_server import seller_of
 from .sources import audit, classify
 from .topics import Topic
 
@@ -103,11 +104,33 @@ def strip_unsourced_claims(report: TopicReport) -> tuple[TopicReport, list[str]]
         else:
             removed.append(f"Dropped source outside India: {source.url}")
 
+    # Shop links are gated by their own rule, not by the government-source one.
+    #
+    # A `*.gov.in` test would delete every one of them — no ministry sells
+    # urea — and the India-only `usable` test is too weak for a link that
+    # takes somebody's money. The allowlist in `seller_server.py` is the
+    # policy, and it is enforced here a second time because this is the last
+    # code that touches a report before it is published: a link that reaches
+    # this point from anywhere other than that tool is a bug, and it should
+    # die here rather than reach a farmer.
+    kept_sellers = []
+    for link in report.where_to_buy:
+        if seller_of(link.url):
+            kept_sellers.append(link)
+        else:
+            removed.append(
+                f"Dropped shop link from an unapproved domain: {link.url}"
+            )
+
     if not removed:
         return report, []
 
     cleaned = report.model_copy(
-        update={"government_schemes": kept_schemes, "sources": kept_sources}
+        update={
+            "government_schemes": kept_schemes,
+            "sources": kept_sources,
+            "where_to_buy": kept_sellers,
+        }
     )
     return cleaned, removed
 

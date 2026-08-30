@@ -6,25 +6,41 @@ import { CROPS, categoryLabel, categoryTint } from "@/data/crops";
 import { FERTILIZERS } from "@/data/fertilizers";
 import {
   PREDICTED_FERTILIZERS,
+  findCropPrediction,
   verdictLabel,
-  type CropPrediction,
 } from "@/data/prediction";
+import { CropVisuals } from "./CropVisuals";
 import { Insights } from "./Insights";
+import { LiveCropBand } from "./LiveBand";
 import { Badge, DetailPage, type DetailLink } from "./DetailPage";
 
-/** One recommended crop, and the bags matched to it. */
-export function CropDetail({ pick }: { pick: CropPrediction }) {
+/**
+ * One crop the model can recommend.
+ *
+ * Takes a key rather than a fixture row. Every one of the 22 crops the model
+ * can name has a page now — before this, `generateStaticParams` was fed from
+ * the five-crop worked example and a farmer whose card came back `mothbeans`
+ * got a 404 on their own top recommendation.
+ *
+ * So the hand-written copy is looked up and may be absent, and the page is
+ * built from what always exists instead: the name and photograph, the
+ * cultivation calendar, the farmer's live result if they came from a
+ * prediction, and whatever the research agents have gathered.
+ */
+export function CropDetail({ cropKey }: { cropKey: string }) {
   const { lang } = useLang();
   const mr = lang === "mr";
-  const crop = CROPS.find((c) => c.key === pick.key);
+  const crop = CROPS.find((c) => c.key === cropKey);
   if (!crop) return null;
 
   const category = categoryLabel[crop.category];
+  //: Written for five of the twenty-two. Absent is the normal case.
+  const pick = findCropPrediction(cropKey);
 
   // The bags this crop needs, carrying the verdict with them — a crop page
   // that links to a fertilizer without saying "hold off" would undo the one
   // useful thing the fertilizer deck says.
-  const links: DetailLink[] = pick.fertilizers
+  const links: DetailLink[] = (pick?.fertilizers ?? [])
     .map((key) => {
       const fert = FERTILIZERS.find((f) => f.key === key);
       const fp = PREDICTED_FERTILIZERS.find((p) => p.key === key);
@@ -40,26 +56,23 @@ export function CropDetail({ pick }: { pick: CropPrediction }) {
 
   return (
     <DetailPage
-      eyebrow={mr ? "शिफारस केलेलं पीक" : "Recommended crop"}
+      eyebrow={mr ? "पीक" : "Crop"}
       title={mr ? crop.mr : crop.en}
       subtitle={mr ? crop.en : crop.mr}
       photoSrc={photo(crop.img)}
       photoAlt={mr ? crop.mr : crop.en}
       badges={
-        <>
-          <Badge>
-            {pick.score}% {mr ? "जुळतं" : "match"}
-          </Badge>
-          <Badge className={categoryTint[crop.category]}>
-            {mr ? category.mr : category.en}
-          </Badge>
-        </>
+        <Badge className={categoryTint[crop.category]}>
+          {mr ? category.mr : category.en}
+        </Badge>
       }
-      why={pick.why}
-      facts={pick.facts}
-      notes={pick.notes}
+      live={<LiveCropBand cropKey={cropKey} />}
+      visuals={<CropVisuals cropKey={cropKey} />}
+      why={pick?.why}
+      facts={pick?.facts}
+      notes={pick?.notes}
       links={links}
-      insights={<Insights category="crop" slug={pick.key} />}
+      insights={<Insights category="crop" slug={cropKey} />}
       linksTitle={mr ? "याला काय द्यायचं" : "What to feed it"}
     />
   );

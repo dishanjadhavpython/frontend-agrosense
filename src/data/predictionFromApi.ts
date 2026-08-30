@@ -6,6 +6,8 @@ import type {
   PredictedFertilizer,
   PredictedSoil,
   PredictionResult,
+  RangeWarning,
+  StatusCode,
 } from "@/lib/cardTypes";
 import type { FertVerdict } from "./prediction";
 
@@ -54,7 +56,7 @@ function fertilizerKey(name: string): string | null {
   return has(FERTILIZERS, key) ? key : null;
 }
 
-export function soilCardFrom(soil: PredictedSoil | null): SoilCard | null {
+export function soilCardFrom(soil: PredictedSoil): SoilCard | null {
   if (!soil || !has(SOILS, soil.key)) return null;
   return {
     key: soil.key,
@@ -97,10 +99,22 @@ export type LivePrediction = {
   soil: SoilCard | null;
   crops: CropCard[];
   fertilizers: FertCard[];
-  /** False when no soil photograph reached the models. */
-  soilApplied: boolean;
   /** True when the card's readings themselves came from OCR. */
   needsReview: boolean;
+  /**
+   * Inputs sitting outside the range their model was trained on. Carried up to
+   * the board because a recommendation extrapolated past its training data is
+   * still a recommendation, and the farmer is the one who has to weigh it.
+   */
+  outOfRange: RangeWarning[];
+  /**
+   * Which macronutrients the card printed a range for. A `null` means no bag
+   * could be ruled in or out on that nutrient — the fertilizer verdicts lean
+   * on these, so where they are absent the board has to say so.
+   */
+  nutrientStatus: Record<"N" | "P" | "K", StatusCode | null>;
+  /** How many topics the agents started researching for this prediction. */
+  researchStarted: number;
 };
 
 export function fromApi(result: PredictionResult): LivePrediction {
@@ -108,7 +122,9 @@ export function fromApi(result: PredictionResult): LivePrediction {
     soil: soilCardFrom(result.soil),
     crops: cropCardsFrom(result.crops),
     fertilizers: fertCardsFrom(result.fertilizers),
-    soilApplied: result.soil_applied,
     needsReview: result.needs_review,
+    outOfRange: result.out_of_range ?? [],
+    nutrientStatus: result.nutrient_status ?? { N: null, P: null, K: null },
+    researchStarted: result.research?.started.length ?? 0,
   };
 }

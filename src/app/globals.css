@@ -492,6 +492,37 @@
 }
 
 /* ============================================================
+   Smoothness — three cheap wins, none of which animates anything
+   new. They make what is already there cost less on the phone
+   this is actually read on.
+   ============================================================ */
+
+/* The home page is nine tall sections and the browser lays out every one of
+   them before first paint, including the eight nobody has scrolled to. This
+   defers layout and paint for off-screen sections until they approach the
+   viewport. `contain-intrinsic-size` supplies a placeholder height so the
+   scrollbar does not jump as each one is realised.
+
+   Not applied to the hero or the upload: both are above the fold on every
+   device, and deferring them costs a frame rather than saving one. */
+.defer-paint {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 800px;
+}
+
+/* `will-change` only while something is actually moving. Left on permanently
+   it keeps a compositor layer alive for every element carrying it, which on a
+   cheap Android phone is memory that could have been the image cache. */
+@media (hover: hover) {
+  .pallet-photo {
+    will-change: auto;
+  }
+  .group\/pallet:hover .pallet-photo {
+    will-change: transform;
+  }
+}
+
+/* ============================================================
    Motion — one global kill switch, honoured everywhere.
    ============================================================ */
 

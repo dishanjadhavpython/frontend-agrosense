@@ -1,0 +1,146 @@
+/**
+ * The research sweep, on a schedule.
+ *
+ * This is the half of the workload Lambda is genuinely right for. The sweep
+ * runs every thirty minutes, does nothing at all most of the time, and when it
+ * does work it is a burst of network-bound calls — so scaling to zero between
+ * runs is the correct shape, and a cold start costs nobody anything because no
+ * farmer is waiting on it.
+ *
+ * A container image rather than a zip: the sweep imports the same
+ * `backend.agents` package the service does, which pulls the agents SDK and
+ * five MCP servers well past the 250 MB zip limit.
+ *
+ * On-demand research — the runs that start the moment a farmer hits Predict —
+ * is NOT here. That happens in-process on the Fargate task, because it has to
+ * begin within the request and report progress back through
+ * `/api/insights/...`. See `backend/agents/queue.py`.
+ */
+
+resource "aws_ecr_repository" "agents" {
+  name                 = "${var.name_prefix}-agents"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "agents" {
+  repository = aws_ecr_repository.agents.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep the last 3 images"
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = 3
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
+data "aws_iam_policy_document" "lambda_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "agents" {
+  name               = "${var.name_prefix}-agents"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "agents_logs" {
+  role       = aws_iam_role.agents.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy" "agents_data" {
+  name = "agent-data"
+  role = aws_iam_role.agents.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        # Reports and the demand ledger. The sweep never touches an uploaded
+        # card — it researches crops and soils, not documents.
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+        ]
+        Resource = var.reports_table_arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = values(var.secret_arns)
+      },
+    ]
+  })
+}
+
+resource "aws_cloudwatch_log_group" "agents" {
+  name              = "/aws/lambda/${var.name_prefix}-agents"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_lambda_function" "agents" {
+  function_name = "${var.name_prefix}-agents"
+  role          = aws_iam_role.agents.arn
+  package_type  = "Image"
+  image_uri     = "${aws_ecr_repository.agents.repository_url}:${var.image_tag}"
+
+  architectures = ["arm64"]
+
+  # A topic is four LLM calls plus a dozen page fetches. Six topics per sweep
+  # against a 15-minute ceiling — the batch size exists to stay inside this.
+  timeout     = 900
+  memory_size = 2048
+
+  environment {
+    variables = {
+      AGROSENSE_REPORTS_TABLE = var.reports_table
+      AGROSENSE_DATA_DIR      = "/tmp/agrosense"
+      AWS_REGION_NAME         = var.region
+      # Secrets are read at runtime through the SDK rather than injected as
+      # env vars — a Lambda's environment is visible in the console, and a
+      # `terraform plan` diff would print any value set here.
+      AGROSENSE_SECRET_PREFIX = "${var.name_prefix}/"
+    }
+  }
+
+  depends_on = [aws_cloudwatch_log_group.agents]
+}
+
+resource "aws_cloudwatch_event_rule" "sweep" {
+  name                = "${var.name_prefix}-agent-sweep"
+  description         = "Catches whatever the on-demand queue capped or skipped."
+  schedule_expression = "rate(${var.sweep_minutes} minutes)"
+}
+
+resource "aws_cloudwatch_event_target" "sweep" {
+  rule      = aws_cloudwatch_event_rule.sweep.name
+  target_id = "agents"
+  arn       = aws_lambda_function.agents.arn
+}
+
+resource "aws_lambda_permission" "events" {
+  statement_id  = "AllowExecutionFromEventBridge"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.agents.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.sweep.arn
+}

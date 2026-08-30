@@ -40,6 +40,20 @@ class GovernmentScheme(BaseModel):
     url: str = ""
 
 
+class SellerLink(BaseModel):
+    """One place a farmer can buy this online.
+
+    Populated from the `buy_links` tool and never typed by the model, for the
+    same reason `PriceObservation` is not: a wrong shop link takes somebody's
+    money. Every field here was read off a page that returned 200 at the time
+    of the call, from a domain on the allowlist in `seller_server.py`.
+    """
+
+    seller: str = Field(description="The shop's name, from the allowlist.")
+    title: str = Field(description="The listing's own page title.")
+    url: str
+
+
 class ResearchFindings(BaseModel):
     """Structured output of the Research agent -- raw gathered material,
     not yet written up as a polished report."""
@@ -65,6 +79,14 @@ class ResearchFindings(BaseModel):
     )
     sources: list[SourceRef] = Field(default_factory=list)
     youtube_links: list[YoutubeRef] = Field(default_factory=list)
+    where_to_buy: list[SellerLink] = Field(
+        default_factory=list,
+        description="Copied verbatim from the buy_links tool. Never hand-written.",
+    )
+    buy_note: str = Field(
+        default="",
+        description="Set when the seller tool found nothing, explaining why.",
+    )
 
 
 class TopicReport(BaseModel):
@@ -86,6 +108,13 @@ class TopicReport(BaseModel):
         description="Why prices are absent, when they are. Shown to the farmer.",
     )
     youtube_resources: list[YoutubeRef] = Field(default_factory=list)
+    #: Straight from the seller tool, allowlisted and fetch-verified. Empty is
+    #: a real answer and the page says so rather than linking somewhere unchecked.
+    where_to_buy: list[SellerLink] = Field(default_factory=list)
+    buy_note: str = Field(
+        default="",
+        description="Why there are no links, when there are none. Shown to the farmer.",
+    )
     sources: list[SourceRef] = Field(default_factory=list)
 
 

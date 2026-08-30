@@ -3,63 +3,48 @@
 import { useLang } from "@/lib/i18n";
 import { photo } from "@/lib/assets";
 import { SOILS, retentionLabel, retentionTint } from "@/data/soils";
-import { CROPS } from "@/data/crops";
-import { PREDICTED_CROPS, type SoilPrediction } from "@/data/prediction";
+import { PREDICTED_SOIL } from "@/data/prediction";
+import { SoilVisuals } from "./SoilVisuals";
 import { Insights } from "./Insights";
-import { Badge, DetailPage, type DetailLink } from "./DetailPage";
+import { LiveSoilBand } from "./LiveBand";
+import { Badge, DetailPage } from "./DetailPage";
 
-/** The classified soil, and everything the recommender put on it. */
-export function SoilDetail({ pick }: { pick: SoilPrediction }) {
+/**
+ * One soil the classifier can name.
+ *
+ * All eight classes have a page now, not just the one the worked example
+ * happened to use. The crops that suit it come from the suitability table
+ * rather than from the fixture's crop list — a page about black soil linking
+ * to the laterite example's crops was the old behaviour and it was wrong on
+ * seven pages out of eight.
+ */
+export function SoilDetail({ soilKey }: { soilKey: string }) {
   const { lang } = useLang();
   const mr = lang === "mr";
-  const soil = SOILS.find((s) => s.key === pick.key);
+  const soil = SOILS.find((s) => s.key === soilKey);
   if (!soil) return null;
 
   const retention = retentionLabel[soil.retention];
-
-  const links: DetailLink[] = PREDICTED_CROPS.map((p) => {
-    const crop = CROPS.find((c) => c.key === p.key);
-    if (!crop) return null;
-    return {
-      href: `/prediction/crop/${crop.key}`,
-      lead: mr ? crop.mr : crop.en,
-      sub: `${p.score}% ${mr ? "जुळतं" : "match"}`,
-    };
-  }).filter((l): l is DetailLink => l !== null);
+  const pick = PREDICTED_SOIL.key === soilKey ? PREDICTED_SOIL : undefined;
 
   return (
     <DetailPage
-      eyebrow={mr ? "ओळखलेली माती" : "Soil, classified"}
+      eyebrow={mr ? "मातीचा प्रकार" : "Soil type"}
       title={mr ? soil.mr : soil.en}
       subtitle={mr ? soil.en : soil.mr}
       photoSrc={photo(soil.img)}
       photoAlt={mr ? soil.mr : soil.en}
       badges={
-        <>
-          <Badge>
-            {pick.score}% {mr ? "खात्री" : "confidence"}
-          </Badge>
-          <Badge className={retentionTint[soil.retention]}>
-            {mr ? retention.mr : retention.en}
-          </Badge>
-          {/* The runners-up, kept on the page. A classifier that shows only its
-              winner hides the part a farmer standing in the field can check. */}
-          {pick.alternatives.map((alt) => {
-            const other = SOILS.find((s) => s.key === alt.key);
-            return (
-              <Badge key={alt.key} className="bg-surface text-ink-mute ring-1 ring-line">
-                {other ? (mr ? other.mr : other.en) : alt.key} {alt.score}%
-              </Badge>
-            );
-          })}
-        </>
+        <Badge className={retentionTint[soil.retention]}>
+          {mr ? retention.mr : retention.en}
+        </Badge>
       }
-      why={pick.why}
-      facts={pick.facts}
-      notes={pick.notes}
-      links={links}
-      insights={<Insights category="soil" slug={pick.key} />}
-      linksTitle={mr ? "या मातीत काय लावायचं" : "What we'd plant in it"}
+      live={<LiveSoilBand soilKey={soilKey} />}
+      visuals={<SoilVisuals soilKey={soilKey} />}
+      why={pick?.why}
+      facts={pick?.facts}
+      notes={pick?.notes}
+      insights={<Insights category="soil" slug={soilKey} />}
     />
   );
 }

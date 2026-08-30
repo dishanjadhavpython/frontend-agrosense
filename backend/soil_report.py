@@ -236,7 +236,14 @@ def _is_plausible(key: str, reading: float, minimum: float, maximum: float) -> b
     return True
 
 
-def _status(reading: float, minimum: float, maximum: float) -> tuple[str, str]:
+def status_for(reading: float, minimum: float, maximum: float) -> tuple[str, str]:
+    """Where a reading sits against the range the card itself printed.
+
+    Public because `/api/predict` calls it too. When a farmer corrects a
+    reading OCR misread, the status has to be recomputed from the corrected
+    number — the stored one was derived from the wrong value and is what drives
+    the fertilizer ranking.
+    """
     if reading < minimum:
         return "Below range", "low"
     if reading > maximum:
@@ -277,7 +284,7 @@ def _build_metric(
     if minimum == maximum:
         return None
 
-    status, status_code = _status(reading, minimum, maximum)
+    status, status_code = status_for(reading, minimum, maximum)
     return {
         "key": key,
         "label": label,

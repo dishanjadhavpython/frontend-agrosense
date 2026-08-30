@@ -10,7 +10,13 @@ from uuid import uuid4
 from .chunking import chunk_pages
 from .config import MAX_UPLOAD_BYTES, UPLOAD_DIR
 from .embeddings import embed_chunks
-from .ingest import UnreadableDocument, UnsupportedDocument, classify, extract_document
+from .ingest import (
+    UnreadableDocument,
+    UnsupportedDocument,
+    classify,
+    extract_document,
+    verify_magic,
+)
 from .keyword_extractor import extract_keywords
 from .prediction_engine import predict_from_metrics
 from .rag_pipeline import generate_answer
@@ -119,11 +125,25 @@ class DocumentService:
 
     # ---- upload --------------------------------------------------------
 
-    def ingest(self, *, filename: str, stream) -> dict[str, Any]:
-        """Store the card, read it, index it. Raises `UnsupportedDocument` or
-        `UnreadableDocument`; the caller turns those into 400/422."""
+    def ingest(self, *, filename: str, stream, owner_id: str) -> dict[str, Any]:
+        """Store the card, read it, index it, and record whose it is.
+
+        `owner_id` is a Clerk user id and is required — there is deliberately no
+        default. A Soil Health Card carries a farmer's name, village and survey
+        number, and until this parameter existed every stored card was readable
+        by anyone who could reach the service: `list()` returned all of them and
+        `get()` would hand over any id. An unowned document is not a document
+        this service is willing to keep.
+
+        Raises `UnsupportedDocument` or `UnreadableDocument`; the caller turns
+        those into 400/422.
+        """
+        if not owner_id:
+            raise ValueError("owner_id is required to store a card.")
         original_name = Path(filename or "").name
-        classify(original_name)  # raises UnsupportedDocument before anything is written
+        # The extension decides which reader runs. It is checked first because
+        # it is free; the bytes are checked below, once there are some.
+        kind = classify(original_name)
 
         document_id = _document_id(original_name)
         target = UPLOAD_DIR / document_id
@@ -131,6 +151,13 @@ class DocumentService:
         try:
             with target.open("wb") as buffer:
                 shutil.copyfileobj(stream, buffer, length=1024 * 1024)
+
+            # Now that the bytes are on disk, check they are plausibly the
+            # thing the name claimed. A `.pdf` full of HTML is refused here
+            # rather than handed to a reader — the extension chooses the
+            # parser, the magic bytes decide whether to believe it.
+            with target.open("rb") as head_reader:
+                verify_magic(kind, head_reader.read(16))
 
             size = target.stat().st_size
             if size == 0:
@@ -162,6 +189,7 @@ class DocumentService:
                     "chunk_count": len(chunks),
                     "uploaded_at": timestamp,
                     "updated_at": timestamp,
+                    "owner_id": owner_id,
                 }
             )
 
@@ -177,7 +205,7 @@ class DocumentService:
             target.unlink(missing_ok=True)
             raise
 
-        return self.get(document_id)
+        return self.get(document_id, owner_id=owner_id)
 
     # ---- retrieval -----------------------------------------------------
 
@@ -187,12 +215,32 @@ class DocumentService:
             raise FileNotFoundError("Document not found.")
         return path
 
-    def get(self, document_id: str) -> dict[str, Any]:
+    def get(self, document_id: str, *, owner_id: str | None = None) -> dict[str, Any]:
+        """One card, if it is yours.
+
+        A mismatched owner raises `FileNotFoundError` — the same error a
+        missing id raises, and deliberately not a 403. Distinguishing "not
+        yours" from "does not exist" confirms to a stranger that a given
+        document id is real, which is the one bit of information an enumeration
+        attempt is looking for.
+
+        `owner_id=None` skips the check and exists for internal callers that
+        have already established ownership. Every HTTP path passes an owner;
+        the parameter is keyword-only so that cannot happen by accident.
+        """
         safe_id = Path(document_id).name
         path = self._path(safe_id)
 
         store = load_store()
         record = store.get("documents", {}).get(safe_id)
+
+        if owner_id is not None:
+            stored_owner = (record or {}).get("owner_id")
+            # A record written before ownership existed has no owner and
+            # belongs to nobody. It is not served to anyone rather than being
+            # granted to the first caller who asks.
+            if stored_owner != owner_id:
+                raise FileNotFoundError("Document not found.")
 
         if record is None or int(record.get("extraction_version") or 0) < EXTRACTION_VERSION:
             # Re-read rather than serve a parse from an older extractor.
@@ -202,6 +250,10 @@ class DocumentService:
                 **{k: v for k, v in refreshed.items() if k not in {"text", "pages"}},
                 "id": safe_id,
                 "page_count": len(refreshed["pages"]),
+                # Re-extraction must not drop the owner. Without this line a
+                # bump to EXTRACTION_VERSION would silently un-own every stored
+                # card the next time it was opened.
+                "owner_id": (record or {}).get("owner_id"),
             }
             store_document_details(safe_id, record)
 
@@ -228,15 +280,25 @@ class DocumentService:
             "predictions": record.get("predictions") or predict_from_metrics([]),
         }
 
-    def list(self) -> list[dict[str, Any]]:
+    def list(self, *, owner_id: str) -> list[dict[str, Any]]:
+        """This farmer's cards. Never anybody else's.
+
+        This method used to take no arguments and return every card the service
+        had ever stored, in full, including the extracted readings. Behind a
+        public address that is a disclosure of other people's land records; the
+        owner is now required rather than optional so the unscoped call cannot
+        be written by accident.
+        """
         documents = []
         for path in sorted(
             UPLOAD_DIR.iterdir(), key=lambda item: item.stat().st_mtime, reverse=True
         ):
             if path.is_file() and not path.name.startswith("."):
                 try:
-                    documents.append(self.get(path.name))
+                    documents.append(self.get(path.name, owner_id=owner_id))
                 except (FileNotFoundError, UnreadableDocument, UnsupportedDocument):
+                    # Somebody else's card raises FileNotFoundError above and
+                    # lands here, which is exactly the intended outcome.
                     continue
         return documents
 
@@ -249,11 +311,15 @@ class DocumentService:
         top_k: int = 5,
         document_id: str | None = None,
         history: list[dict[str, str]] | None = None,
+        owner_id: str,
     ) -> dict[str, Any]:
         context = None
         safe_id = Path(document_id).name if document_id else None
         if safe_id:
-            context = self.get(safe_id)
+            # Raises FileNotFoundError for a card that is not this farmer's,
+            # before any embedding is queried. Asking questions of somebody
+            # else's document is the same disclosure as reading it.
+            context = self.get(safe_id, owner_id=owner_id)
 
         results = query_embeddings(question, top_k=top_k, filename=safe_id) if safe_id else []
         answer = generate_answer(

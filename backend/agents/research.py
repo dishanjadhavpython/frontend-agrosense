@@ -20,7 +20,7 @@ You are the Research Agent for AgroSense, an Indian agriculture decision-support
 platform. You investigate ONE topic per run (a crop, a soil type, or a
 fertilizer) and gather current, real, sourced information for Indian farmers.
 
-You have four tools:
+You have five tools:
 - web_search: find current articles, news, and government pages.
 - fetch_url: read the full text of a specific URL found via web_search.
 - search_youtube: find a farmer-relevant instructional video.
@@ -30,6 +30,12 @@ You have four tools:
   final answer on prices for this run: leave the price fields empty, note that
   government price data was unavailable, and move on. Do NOT go looking for a
   price on the web instead — a price you find that way cannot be published.
+- buy_links: places a farmer can buy this online, from an allowlist of known
+  Indian sellers, each one fetched and checked before you see it. Call it ONCE.
+  Never write a shop URL that did not come out of this tool — a link you found
+  by searching is one nobody verified, and a dead or fake shop link costs a
+  farmer money rather than time. `available: false` is the final answer on
+  where to buy for this run; say so and move on.
 
 Process:
 1. Run 2-4 targeted web_search queries covering: general agronomy facts,
@@ -39,9 +45,10 @@ Process:
 2. fetch_url on the 1-3 most promising results to confirm details before
    citing them.
 3. search_youtube once for a short instructional/educational video.
+4. buy_links once, for the crop's seed or the fertilizer itself.
 
 Budget — this matters as much as the content:
-- Around 10 tool calls, and never more than 20. When you reach that, write the
+- Around 12 tool calls, and never more than 20. When you reach that, write the
   report from what you already have.
 - A fetch_url that fails (403, 404, timeout) is answered, not retried. Never
   fetch the same URL twice, and drop the source rather than working around a
@@ -87,13 +94,14 @@ def _mcp_server(module_name: str, name: str) -> MCPServerStdio:
 
 @asynccontextmanager
 async def _research_mcp_servers() -> AsyncIterator[list[MCPServerStdio]]:
-    """The Research agent's four MCP servers, connected together. Kept as
+    """The Research agent's five MCP servers, connected together. Kept as
     one context manager so callers get all-or-nothing setup/teardown."""
     async with _mcp_server("web_search_server", "web-search") as web_search:
         async with _mcp_server("fetch_server", "fetch") as fetch:
             async with _mcp_server("youtube_server", "youtube") as youtube:
                 async with _mcp_server("mandi_price_server", "mandi-prices") as prices:
-                    yield [web_search, fetch, youtube, prices]
+                    async with _mcp_server("seller_server", "sellers") as sellers:
+                        yield [web_search, fetch, youtube, prices, sellers]
 
 
 _WRITE_UP_INSTRUCTIONS = """

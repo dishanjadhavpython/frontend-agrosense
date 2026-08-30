@@ -167,6 +167,19 @@ AGENTS_SWEEP_MINUTES = float(os.getenv("AGROSENSE_AGENTS_SWEEP_MINUTES", "30"))
 
 AGENTS_RUN_ON_STARTUP_IF_STALE = _flag("AGROSENSE_AGENTS_RUN_ON_STARTUP", True)
 
+#: How many on-demand research runs may be in flight at once.
+#:
+#: The sweep is bounded by `AGENTS_BATCH_SIZE` because it is a timer — it fires
+#: on its own schedule and nobody can make it fire faster. Since `/api/predict`
+#: began asking for research the moment a farmer hits Predict, that is no
+#: longer true: one prediction names a soil, five crops and three fertilizers,
+#: and without a ceiling a handful of farmers predicting at once would start
+#: dozens of concurrent agent runs, each spawning four MCP subprocesses.
+#:
+#: Three is deliberately small. What a farmer is about to open is the soil and
+#: the top crop; the rest of the list can wait for the sweep.
+AGENTS_MAX_INFLIGHT = int(os.getenv("AGROSENSE_AGENTS_MAX_INFLIGHT", "3"))
+
 AGENT_REPORTS_DIR = Path(
     os.getenv("AGROSENSE_AGENT_REPORTS_DIR", str(DATA_DIR / "agent_reports"))
 ).resolve()
@@ -175,6 +188,18 @@ AGENT_REPORTS_DIR = Path(
 #: price section is reported as unavailable rather than filled in by a language
 #: model, which is the point of sourcing prices from an API at all.
 DATA_GOV_IN_API_KEY = os.getenv("DATA_GOV_IN_API_KEY", "").strip()
+
+# --- Who is asking --------------------------------------------------------
+#
+# Clerk verifies the session token the Next app forwards, which is what makes a
+# stored Soil Health Card belong to one farmer rather than to whoever asks for
+# it. See `backend/auth.py`.
+#
+# Unset is a supported state and means "cannot tell users apart" — allowed on
+# localhost so a clone runs with no Clerk account, refused anywhere else,
+# because the alternative is every card owned by one shared identity.
+CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY", "").strip()
+CLERK_ENABLED = bool(CLERK_SECRET_KEY)
 
 #: This product is Marathi-first and its reference card is from Palghar
 #: district, so mandi prices default to Maharashtra.

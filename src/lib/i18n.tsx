@@ -133,6 +133,32 @@ export const dict = {
     en: "Weather data isn't reachable right now. Try again shortly.",
   },
 
+  // ---- What the farmer types in before predicting ------------------------
+  // Four conditions the models need and no feed can know for somebody's plot.
+  // Every one of these was a server-side constant until the prediction path
+  // stopped filling in blanks; see `backend/models.py MissingInput`.
+  fldConditions: { mr: "तुमच्या शेतातली स्थिती", en: "Your field conditions" },
+  fldTemperature: { mr: "तापमान", en: "Temperature" },
+  fldHumidity: { mr: "हवेतला ओलावा", en: "Air humidity" },
+  fldRainfall: { mr: "पाऊस", en: "Rainfall" },
+  fldMoisture: { mr: "मातीतला ओलावा", en: "Soil moisture" },
+  fldConfirm: { mr: "पत्रिकेवरचे आकडे — तपासून घ्या", en: "From your card — check these" },
+  fldRangeOnCard: { mr: "पत्रिकेवरची मर्यादा", en: "Range on card" },
+  fldNotFound: { mr: "पत्रिकेत सापडलं नाही — कागदावरून बघून भरा", en: "Not found on the card — copy it from the paper" },
+  fldRequired: { mr: "हा आकडा हवा", en: "This figure is needed" },
+  fldOutOfBounds: { mr: "हा आकडा तपासा", en: "Check this figure" },
+  fldPredict: { mr: "अंदाज काढा", en: "Predict" },
+  fldPredicting: { mr: "अंदाज काढतो आहे…", en: "Predicting…" },
+  fldReadCard: { mr: "पत्रिका वाचा", en: "Read the card" },
+  fldReading: { mr: "वाचतो आहे…", en: "Reading…" },
+
+  // ---- Signing in -------------------------------------------------------
+  authNeeded: { mr: "आधी लॉग इन करा", en: "Sign in first" },
+  authWhy: {
+    mr: "तुमची पत्रिका आणि तिच्यावरचे आकडे फक्त तुम्हालाच दिसावेत म्हणून लॉग इन लागतं. दुसरं कोणीही ती उघडू शकत नाही.",
+    en: "Signing in is what keeps your card yours — nobody else can open a card you uploaded.",
+  },
+
   // ---- Farming vocabulary ----------------------------------------------
   soil: { mr: "माती", en: "Soil" },
   crop: { mr: "पीक", en: "Crop" },

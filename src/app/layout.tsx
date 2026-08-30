@@ -5,8 +5,10 @@ import {
   IBM_Plex_Mono,
   Tiro_Devanagari_Marathi,
 } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
 import { LanguageProvider } from "@/lib/i18n";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import { clerkAppearance } from "@/lib/clerkAppearance";
 import "./globals.css";
 
 /**
@@ -92,7 +94,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         </noscript>
       </head>
       <body className="min-h-full flex flex-col">
-        <LanguageProvider>{children}</LanguageProvider>
+        {/* Clerk outside the language provider, not inside it.
+            `ClerkProvider` reads cookies and can redirect, so it has to sit
+            above anything that renders; `LanguageProvider` is a client context
+            with no such needs. The sign-in UI is themed through `appearance`
+            rather than by inheriting from a wrapper, which is why the nesting
+            order is free to be the safe one. */}
+        <ClerkProvider appearance={clerkAppearance}>
+          <LanguageProvider>{children}</LanguageProvider>
+        </ClerkProvider>
       </body>
     </html>
   );

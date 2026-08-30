@@ -123,7 +123,11 @@ export function Deck({
         aria-label={label}
         data-deck
         className={cn(
-          "hide-scrollbar flex snap-x snap-mandatory gap-5 overflow-x-auto",
+          // `overscroll-x-contain`: a swipe past the last card must not drag
+          // the whole page sideways, which is the most common complaint about
+          // a carousel on a phone. Snap and scroll are already native here —
+          // there is no scroll listener to be smoothed.
+          "hide-scrollbar flex snap-x snap-mandatory gap-5 overflow-x-auto overscroll-x-contain",
           // The padding is what lets the first and last pallet reach the
           // middle of the scroller — without it neither can ever be centred.
           "scroll-px-[50%] px-[calc(50%-8.75rem)] py-8 sm:px-[calc(50%-11rem)]",

@@ -60,3 +60,11 @@ APScheduler>=3.11,<4.0           # the sweep timer
 # dependency of ddgs, which is why nothing had noticed it missing — pinned here
 # because a direct import should not rest on another package's dependency list.
 lxml>=5.0,<7.0
+
+# --- Who is asking --------------------------------------------------------
+# Verifies the Clerk session token the Next app forwards. Without it the
+# service cannot tell two farmers apart, and every stored Soil Health Card
+# would be readable by whoever asked — see `backend/auth.py`. Unset keys are a
+# supported state (localhost only); the *package* is not optional, because
+# `auth.py` is imported on every request path.
+clerk-backend-api>=3.0,<4.0

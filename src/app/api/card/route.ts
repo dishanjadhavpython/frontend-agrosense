@@ -28,6 +28,10 @@ const ACCEPTED = /\.(pdf|jpe?g|png|webp|tiff?|bmp)$/i;
 type Message = { mr: string; en: string };
 
 const MESSAGES: Record<CardErrorKind, Message> = {
+  "too-many": {
+    mr: "आजची मर्यादा संपली. एका दिवसात ठरावीक वेळाच पत्रिका वाचता येते — उद्या पुन्हा प्रयत्न करा.",
+    en: "You have used today's card reads. There is a daily limit on each account — try again tomorrow.",
+  },
   unsupported: {
     mr: "ही फाइल वाचता येत नाही. पत्रिकेची PDF, JPG किंवा PNG पाठवा.",
     en: "We can't read that file. Send the card as a PDF, JPG or PNG.",
@@ -57,6 +61,7 @@ const NO_OCR: Message = {
 };
 
 const STATUS: Record<CardErrorKind, number> = {
+  "too-many": 429,
   unsupported: 400,
   unreadable: 422,
   "no-readings": 422,

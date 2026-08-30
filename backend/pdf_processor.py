@@ -9,6 +9,10 @@ from .config import OCR_DPI
 from .ocr import is_ocr_available, recognize_best
 
 
+#: How many pages we are willing to read. See the check in `extract_text`.
+MAX_PDF_PAGES = 20
+
+
 def _normalize_page_text(raw_text: str) -> str:
     lines: list[str] = []
     for line in raw_text.splitlines():
@@ -61,6 +65,20 @@ def extract_text(
     with fitz.open(path) as document:
         if document.page_count == 0:
             raise ValueError("The PDF has no pages.")
+
+        # A cap, because OCR is the most expensive thing this service does and
+        # the page count is attacker-controlled. A 400-page PDF inside the
+        # 10 MB limit is trivial to build and would hold a worker for minutes
+        # rendering every page at 300 DPI — a denial of service that costs the
+        # sender nothing.
+        #
+        # A real Soil Health Card is one or two pages. Twenty is far past any
+        # honest document and far below anything that hurts.
+        if document.page_count > MAX_PDF_PAGES:
+            raise ValueError(
+                f"This PDF has {document.page_count} pages. Send just the page "
+                f"of the Soil Health Card with the readings table on it."
+            )
 
         for page_number, page in enumerate(document, start=1):
             text = _normalize_page_text(page.get_text("text"))

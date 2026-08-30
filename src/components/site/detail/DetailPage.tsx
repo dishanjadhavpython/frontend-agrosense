@@ -43,6 +43,8 @@ export function DetailPage({
   notes,
   links,
   linksTitle,
+  live,
+  visuals,
   insights,
 }: {
   eyebrow: string;
@@ -51,11 +53,27 @@ export function DetailPage({
   photoSrc?: string;
   photoAlt: string;
   badges: ReactNode;
-  why: Bi;
-  facts: Fact[];
-  notes: Bi[];
+  /**
+   * The editorial block, where one was written. Optional since every topic the
+   * models can name now has a page: five crops, four fertilizers and one soil
+   * have hand-written copy, the other twenty-seven do not, and a page built
+   * around a mandatory `why` could only have existed for the ten. A section
+   * with nothing in it is not rendered rather than rendered empty.
+   */
+  why?: Bi;
+  facts?: Fact[];
+  notes?: Bi[];
   links?: DetailLink[];
   linksTitle?: string;
+  /**
+   * The farmer's own result, when they arrived here from a prediction. Its
+   * presence also decides the notice at the top: with it, the page is about
+   * their field and says so; without it, the page is a reference and the
+   * sample-figures caveat stands.
+   */
+  live?: ReactNode;
+  /** Calendar, regions, composition — the parts meant to be read at a glance. */
+  visuals?: ReactNode;
   /** The research section, when the page has a topic to show one for. */
   insights?: ReactNode;
 }) {
@@ -108,18 +126,25 @@ export function DetailPage({
         <div className="mt-5 flex flex-wrap items-center gap-2">{badges}</div>
 
         {/* A caveat belongs before the thing it qualifies. At the foot of the
-            page it was a footnote to a decision already made. */}
-        <p
-          role="status"
-          className="mt-6 rounded-[var(--radius-card)] border border-haldi/50 bg-haldi-wash px-4 py-3 text-[14px] leading-relaxed text-haldi-ink"
-        >
-          <strong className="font-semibold">
-            {mr ? "नमुना आकडे. " : "Sample figures. "}
-          </strong>
-          {mr
-            ? "या पानावरचे आकडे नमुन्याचे आहेत, तुमच्या शेताचे नाहीत. खालची ताजी माहिती मात्र खरी आणि आजची आहे."
-            : "The figures on this page are a worked example, not a reading of your field. The latest updates below are real and current."}
-        </p>
+            page it was a footnote to a decision already made.
+
+            Only when there is no live result. Printing "sample figures" above
+            a band showing the farmer's own 49% would be false in the one
+            direction that matters — it would teach them to discount a number
+            that is actually theirs. */}
+        {live ? null : (
+          <p
+            role="status"
+            className="mt-6 rounded-[var(--radius-card)] border border-haldi/50 bg-haldi-wash px-4 py-3 text-[14px] leading-relaxed text-haldi-ink"
+          >
+            <strong className="font-semibold">
+              {mr ? "सर्वसाधारण माहिती. " : "General reference. "}
+            </strong>
+            {mr
+              ? "हे पान या विषयाची सर्वसाधारण माहिती देतं — तुमच्या शेताचा अंदाज नाही. तुमचा अंदाज बघायचा असेल तर आधी पत्रिका द्या. खालची ताजी माहिती मात्र खरी आणि आजची आहे."
+              : "This page is general information about the subject, not a reading of your field — send your card to get that. The latest updates below are real and current."}
+          </p>
+        )}
 
         {/* The one piece of the page that changed this morning is also the one
             piece furthest from the top. This closes that distance without
@@ -135,54 +160,70 @@ export function DetailPage({
         ) : null}
       </header>
 
+      {/* ---- The farmer's own result, directly under the name. Highest thing
+              on the page after the title because it is the only part of it
+              that is about them. */}
+      {live}
+
+      {/* ---- The picture of the year. Placed above the prose deliberately:
+              a farmer scrolling for "when do I sow this" should meet a
+              calendar, not a paragraph that contains the answer. */}
+      {visuals}
+
       {/* ---- Why this, for this field. The question the other two sections
               cannot answer, and the only reason this page exists rather than
               an encyclopedia entry. */}
-      <section className="mt-12 rounded-[var(--radius-card)] border-l-4 border-leaf bg-leaf-1/60 py-6 pr-6 pl-7">
-        <p className="eyebrow text-ink-mute">
-          {mr ? "तुमच्या शेतासाठी का" : "Why this, for your field"}
-        </p>
-        <p className="mt-3 text-[1.15rem] leading-relaxed text-ink-soft">
-          {mr ? why.mr : why.en}
-        </p>
-      </section>
+      {why ? (
+        <section className="mt-12 rounded-[var(--radius-card)] border-l-4 border-leaf bg-leaf-1/60 py-6 pr-6 pl-7">
+          <p className="eyebrow text-ink-mute">
+            {mr ? "तुमच्या शेतासाठी का" : "Why this, for your field"}
+          </p>
+          <p className="mt-3 text-[1.15rem] leading-relaxed text-ink-soft">
+            {mr ? why.mr : why.en}
+          </p>
+        </section>
+      ) : null}
 
       {/* ---- The figures. */}
-      <Section title={mr ? "थोडक्यात" : "At a glance"}>
-        <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-          {facts.map((f) => (
-            <div
-              key={f.label.en}
-              className="rounded-[var(--radius-card)] border border-line bg-surface p-5"
-            >
-              <dt className="text-[13px] leading-tight text-ink-mute">
-                {mr ? f.label.mr : f.label.en}
-              </dt>
-              <dd className="mt-2 text-[1.1rem] leading-snug font-semibold text-ink">
-                {mr ? f.value.mr : f.value.en}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </Section>
+      {facts && facts.length > 0 ? (
+        <Section title={mr ? "थोडक्यात" : "At a glance"}>
+          <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+            {facts.map((f) => (
+              <div
+                key={f.label.en}
+                className="rounded-[var(--radius-card)] border border-line bg-surface p-5"
+              >
+                <dt className="text-[13px] leading-tight text-ink-mute">
+                  {mr ? f.label.mr : f.label.en}
+                </dt>
+                <dd className="mt-2 text-[1.1rem] leading-snug font-semibold text-ink">
+                  {mr ? f.value.mr : f.value.en}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </Section>
+      ) : null}
 
       {/* ---- The prose. Set in the document face: this is the part that
               should read like something printed and kept, not like UI. */}
-      <Section title={mr ? "काय लक्षात ठेवायचं" : "What to keep in mind"}>
-        <div className="space-y-5">
-          {notes.map((n, i) => (
-            <p
-              key={i}
-              className={cn(
-                "max-w-2xl text-[1.08rem] leading-relaxed text-ink-soft",
-                !mr && "font-[family-name:var(--font-doc)]",
-              )}
-            >
-              {mr ? n.mr : n.en}
-            </p>
-          ))}
-        </div>
-      </Section>
+      {notes && notes.length > 0 ? (
+        <Section title={mr ? "काय लक्षात ठेवायचं" : "What to keep in mind"}>
+          <div className="space-y-5">
+            {notes.map((n, i) => (
+              <p
+                key={i}
+                className={cn(
+                  "max-w-2xl text-[1.08rem] leading-relaxed text-ink-soft",
+                  !mr && "font-[family-name:var(--font-doc)]",
+                )}
+              >
+                {mr ? n.mr : n.en}
+              </p>
+            ))}
+          </div>
+        </Section>
+      ) : null}
 
       {links && links.length > 0 ? (
         <Section title={linksTitle ?? ""}>

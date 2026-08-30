@@ -2,50 +2,23 @@ from __future__ import annotations
 
 from typing import Iterable
 
-CROP_PROFILES: dict[str, dict[str, tuple[float, float]]] = {
-    "Rice": {
-        "ph": (5.0, 6.8),
-        "available_nitrogen": (280.0, 560.0),
-        "available_phosphorus": (10.0, 25.0),
-        "organic_carbon": (0.45, 0.9),
-        "available_sulphur": (10.0, 30.0),
-    },
-    "Wheat": {
-        "ph": (6.0, 7.5),
-        "available_nitrogen": (250.0, 500.0),
-        "available_phosphorus": (12.0, 24.0),
-        "organic_carbon": (0.4, 0.8),
-        "available_zinc": (0.6, 1.2),
-    },
-    "Maize": {
-        "ph": (5.6, 7.4),
-        "available_nitrogen": (280.0, 540.0),
-        "available_phosphorus": (12.0, 25.0),
-        "organic_carbon": (0.4, 0.85),
-        "available_potassium": (0.25, 0.9),
-    },
-    "Cotton": {
-        "ph": (5.8, 8.0),
-        "available_nitrogen": (240.0, 520.0),
-        "available_phosphorus": (10.0, 22.0),
-        "available_potassium": (0.3, 1.0),
-        "available_boron": (0.4, 1.0),
-    },
-    "Sugarcane": {
-        "ph": (6.0, 8.0),
-        "available_nitrogen": (300.0, 560.0),
-        "available_phosphorus": (12.0, 25.0),
-        "available_potassium": (0.3, 1.0),
-        "organic_carbon": (0.45, 0.9),
-    },
-    "Soybean": {
-        "ph": (6.0, 7.5),
-        "available_phosphorus": (12.0, 24.0),
-        "available_potassium": (0.25, 0.9),
-        "organic_carbon": (0.45, 0.9),
-        "available_sulphur": (10.0, 25.0),
-    },
-}
+"""
+What the card says about itself, on ingest.
+
+Scoped deliberately: this reads the twelve numbers against **the ranges the
+card itself printed** and reports what is out of range. It does not decide what
+to plant.
+
+It used to. `CROP_PROFILES` held six crops with hand-written nutrient windows —
+no model, no dataset, no source — and `predict_from_metrics` returned a
+`recommended_crop` scored against them on every ingest. Nothing rendered it,
+which is the only reason it never reached anybody, and it was a second crop
+recommendation sitting behind the real one with none of its provenance.
+
+Crops come from the crop model in `models.py`, ranked from readings the farmer
+confirmed and re-ranked for a soil that was photographed. There is one path to
+a crop recommendation now, and this is not it.
+"""
 
 LOW_ACTIONS = {
     "available_nitrogen": (
@@ -107,17 +80,6 @@ def _metrics_by_key(metrics: Iterable[dict[str, object]]) -> dict[str, dict[str,
     return metric_map
 
 
-def _range_fit(value: float, expected_range: tuple[float, float]) -> float:
-    lower, upper = expected_range
-    if lower <= value <= upper:
-        return 1.0
-
-    tolerance = max((upper - lower) * 0.8, upper * 0.2, 1.0)
-    if value < lower:
-        return max(0.0, 1.0 - ((lower - value) / tolerance))
-    return max(0.0, 1.0 - ((value - upper) / tolerance))
-
-
 def _flagged_metrics(metric_map: dict[str, dict[str, object]]) -> list[str]:
     return [
         str(metric.get("label") or key)
@@ -173,38 +135,6 @@ def _soil_health(metric_map: dict[str, dict[str, object]]) -> dict[str, object]:
         "summary": summary,
         "flagged_metrics": flagged,
     }
-
-
-def _crop_rankings(metric_map: dict[str, dict[str, object]]) -> list[dict[str, object]]:
-    rankings: list[dict[str, object]] = []
-    for crop_name, profile in CROP_PROFILES.items():
-        contributions: list[tuple[str, float]] = []
-        for metric_key, expected_range in profile.items():
-            metric = metric_map.get(metric_key)
-            if metric is None:
-                continue
-            reading = float(metric.get("reading") or 0.0)
-            fit = _range_fit(reading, expected_range)
-            contributions.append((str(metric.get("label") or metric_key), fit))
-
-        if not contributions:
-            continue
-
-        average_fit = sum(value for _, value in contributions) / len(contributions)
-        score = round(average_fit * 100, 1)
-        top_signals = sorted(contributions, key=lambda item: item[1], reverse=True)[:2]
-        reason = "Strongest alignment on " + ", ".join(label for label, _ in top_signals) + "."
-        rankings.append(
-            {
-                "name": crop_name,
-                "score": score,
-                "confidence": int(round(score)),
-                "reason": reason,
-            }
-        )
-
-    rankings.sort(key=lambda item: item["score"], reverse=True)
-    return rankings[:3]
 
 
 def _fertilizer_plan(metric_map: dict[str, dict[str, object]]) -> list[dict[str, object]]:
@@ -269,20 +199,15 @@ def _fertilizer_plan(metric_map: dict[str, dict[str, object]]) -> list[dict[str,
 
 
 def predict_from_metrics(metrics: list[dict[str, object]]) -> dict[str, object]:
+    """A summary of the card, derived only from the card.
+
+    Every value here traces back to a printed range on the farmer's own
+    document. No crop is named — see the module docstring.
+    """
     metric_map = _metrics_by_key(metrics)
-    health = _soil_health(metric_map)
-    crops = _crop_rankings(metric_map)
-    primary_crop = crops[0] if crops else {
-        "name": "Insufficient data",
-        "score": 0.0,
-        "confidence": 0,
-        "reason": "No crop recommendation can be scored without structured nutrient readings.",
-    }
 
     return {
-        "soil_health": health,
-        "recommended_crop": primary_crop,
-        "alternative_crops": crops[1:],
+        "soil_health": _soil_health(metric_map),
         "fertilizer_plan": _fertilizer_plan(metric_map),
         "input_coverage": {
             "metrics_found": len(metric_map),

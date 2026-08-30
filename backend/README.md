@@ -140,13 +140,133 @@ footnotes it (`bandDivergesFromGuidance` in `src/data/soilReading.ts`).
 
 ## Advice
 
-`prediction_engine.py` — pure Python, no model artifacts, ported from the
-`aws p2 work properly` project. Scores soil health, ranks crops and builds a
-fertilizer plan that can say *hold* as well as *apply*.
+Two layers, and they answer different questions.
 
-The XGBoost and torch models that used to do this need six `.pkl`/`.pth` files
-that are not in this repository. They are in `_unwired/` with a note on what
-each needs to come back.
+`prediction_engine.py` — pure Python, no model artifacts. Reads the card
+against **its own printed ranges**: a soil-health score and a fertilizer plan
+that can say *hold* as well as *apply*. It names no crop. It used to, scored
+against six hand-written nutrient windows in a `CROP_PROFILES` table with no
+dataset behind it; that was a second crop recommender standing behind the real
+one, and it was removed.
+
+`models.py` — the three trained models, and the only path to a crop or a
+fertilizer recommendation. `POST /api/predict` requires **nine inputs and
+supplies none of them**:
+
+| | |
+|---|---|
+| `document_id` | the already-ingested card |
+| `nitrogen`, `phosphorus`, `potassium`, `ph` | off the card, as the farmer confirmed them |
+| `temperature`, `humidity`, `rainfall`, `moisture` | the field, typed in |
+| `soil_image` | required; the classifier is the only thing that sets soil type |
+
+A missing one is a 422 naming the field. This is deliberate and recent: those
+four field conditions previously defaulted to `26°C / 68% / 110mm / 34%` and
+the frontend never sent real ones, so every recommendation the product had ever
+made was computed for a field that did not exist. See `MissingInput`.
+
+The N/P/K statuses that decide *apply* versus *hold* are recomputed from the
+submitted readings against the card's printed range, not read from what was
+stored at ingest — otherwise correcting an OCR misread would change the number
+on screen and nothing else.
+
+### The nitrogen mismatch, and what it turned out to be
+
+Worth recording, because the obvious fix would have been wrong.
+
+The crop model's `N` column ran 0–140 while a Soil Health Card reports
+available nitrogen at 150–700 kg/ha. That looks like a unit problem, and the
+tempting fix is a conversion factor. Scoring `Crop_recommendation.csv` against
+the government's own critical limits (N low <280, medium 280–560, high >560
+kg/ha) shows what it actually is:
+
+| | |
+|---|---|
+| rows in the SHC "low" N band | **100%** — all 2,200, none reaching even "medium" |
+| within-crop spread of K | sd ≈ 3, across a column spanning 5–205 |
+| per-crop means | rice 80-48-40, maize 78-48-20, cotton 118-46-20 |
+
+Those are the published ICAR fertilizer doses (rabi rice is 80-40-40), jittered.
+The columns are a **fertilizer prescription, not a soil test** — Kaggle's own
+description calls them "ratio of Nitrogen content in soil", which they are not.
+So the pipeline was asking a fertilizer table what a farmer's soil contained,
+and no conversion factor would ever have reconciled that.
+
+It also explains the 99.2% accuracy: with N/P/K near-constant per crop, the
+model was a lookup table keyed on a value the product cannot supply.
+
+**Both models were retrained without N, P and K.**
+
+| model | before | after |
+|---|---|---|
+| crop | 99.2% (7 features) | **96.3%** (temperature, humidity, ph, rainfall) |
+| fertilizer | 17.3% (8 features) | **16.5%** (temperature, humidity, moisture, soil, crop) |
+
+Three points and 0.8 points, in exchange for every model input being a quantity
+the product actually measures, in the unit the training table used. The
+fertilizer model's own NPK columns had the mirror-image problem — 4–42 / 0–19 /
+0–42 against a card's hundreds, roughly 24 standard deviations out on every
+request — and went for the same reason.
+
+The card's nutrients still decide the fertilizer, and now do so exclusively,
+through `_need_score`: each reading against the range printed beside it on that
+farmer's own card. That comparison is scale-free, which is why it was always
+the part that led and is now the only part.
+
+`training_range_warnings` survives for the ordinary case — 400 mm of rainfall
+against a table stopping at 298. Every pair it checks is the same quantity in
+the same unit on both sides, so a warning now means an unusual field rather
+than an incoherent comparison. Ranges come from `ML/feature_ranges.py`.
+
+## The research agents
+
+Four agents — Planner, Research, Creator, Reviewer — gather current Indian
+information for one crop, soil or fertilizer at a time, and five MCP servers
+give them their only access to the outside world:
+
+| server | needs | what it is for |
+|---|---|---|
+| `web_search_server` | nothing | discovery, via `ddgs` |
+| `fetch_server` | nothing | reading one page in full |
+| `youtube_server` | `YOUTUBE_API_KEY` | one instructional video (degrades to a search link) |
+| `mandi_price_server` | `DATA_GOV_IN_API_KEY` | government prices, from Agmarknet on data.gov.in |
+| `seller_server` | nothing | where to buy it, from an allowlist |
+
+Three of these exist to keep a specific class of claim away from the model.
+Prices come from the government API or the section says they were unavailable.
+Shop links come from an allowlist of known Indian sellers, are fetched and
+verified before publication, and are checked against that same allowlist again
+by the reviewer — because a wrong scheme link wastes an afternoon and a wrong
+shop link takes somebody's money.
+
+### When they run
+
+Two triggers, doing different jobs.
+
+**On demand.** `/api/predict` calls `agents.queue.request_now()` with what it
+just predicted. The soil and the top crops start researching immediately, so a
+farmer who taps their own recommendation finds the page filling in under them.
+`AGROSENSE_AGENTS_MAX_INFLIGHT` (default 3) is the ceiling — one prediction
+names up to nine topics, and without a cap a handful of simultaneous farmers
+would start dozens of agent runs.
+
+**The sweep.** Every `AGROSENSE_AGENTS_SWEEP_MINUTES` (default 30), catching
+whatever the request path capped or skipped. A topic refreshes at most once per
+`AGROSENSE_AGENTS_INTERVAL_HOURS` (default 8), so two farmers predicting cotton
+in the same afternoon produce one run.
+
+`/api/insights/...` carries `researching: true` while a run is in flight, and
+the detail page polls every 15s on it. "Being written now" and "not researched
+yet" are different things to be told.
+
+### When they don't
+
+`/api/health` reports `insights.queue` and `insights.last_run`, including the
+first error verbatim. That exists because of a real failure: six consecutive
+topics returning `429 ... credit_balance_exhausted` while every detail page
+went on politely saying the topic had not been researched yet — indefinitely,
+with nothing anywhere reporting why. An exhausted key and an idle queue used to
+look identical from outside. They no longer do.
 
 ## Storage
 

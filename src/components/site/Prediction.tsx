@@ -59,6 +59,15 @@ export function Prediction() {
     ? fertilizers.filter((f) => f.verdict === "apply").length
     : applyCount();
 
+  // Macronutrients the card printed no range for. Named on screen rather than
+  // quietly folded into the ranking — see the note above the fertilizer deck.
+  const NUTRIENT_NAMES = { N: ["नत्र", "nitrogen"], P: ["स्फुरद", "phosphorus"], K: ["पालाश", "potassium"] } as const;
+  const unjudged = live
+    ? (["N", "P", "K"] as const)
+        .filter((n) => live.nutrientStatus[n] === null)
+        .map((n) => NUTRIENT_NAMES[n][mr ? 0 : 1])
+    : [];
+
   return (
     <Section
       id="prediction"
@@ -89,20 +98,30 @@ export function Prediction() {
           {live ? (
             <>
               <strong className="font-semibold">
-                {mr ? "तुमच्या पत्रिकेवरून. " : "From your card. "}
+                {mr ? "तुमच्या शेतासाठी. " : "For your field. "}
               </strong>
-              {live.soilApplied
-                ? mr
-                  ? "मातीचा फोटो आणि पत्रिकेवरचे आकडे — दोन्ही वापरले आहेत."
-                  : "Your soil photo and your card's readings, both used."
-                : mr
-                  ? "पत्रिकेवरच्या आकड्यांवरून. मातीचा फोटो दिला नव्हता, त्यामुळे मातीचा प्रकार ओळखलेला नाही."
-                  : "From the card's readings alone — no soil photo was sent, so the soil type has not been identified."}
+              {/* No "from the card alone" branch any more: the soil photograph
+                  is required, so there is only one kind of live answer and it
+                  used every input the farmer gave. */}
+              {mr
+                ? "मातीचा फोटो, पत्रिकेवरचे आकडे आणि तुम्ही भरलेली शेतातली स्थिती — तिन्ही वापरून."
+                : "Your soil photo, the readings off your card, and the field conditions you entered — all three."}
               {live.needsReview
                 ? mr
-                  ? " आकडे फोटोतून वाचले असल्याने ते आधी तपासून घ्या."
-                  : " The readings came from a photo, so check them before acting on this."
+                  ? " आकडे फोटोतून वाचले होते; तुम्ही तपासलेले आकडे वापरले आहेत."
+                  : " The card was read from a photo — what ran is the figures as you confirmed them."
                 : ""}
+              {/* The agents started the moment this prediction landed. Said
+                  here because the work is invisible otherwise — it happens on
+                  the server, and the farmer would only discover it by opening
+                  a detail page and finding it already full. */}
+              {live.researchStarted > 0 ? (
+                <span className="mt-2 block">
+                  {mr
+                    ? `यांची ताजी माहिती आत्ता गोळा केली जाते आहे — खालच्या कार्डावर दाबून बघा, पान आपोआप भरेल.`
+                    : `Gathering the latest on ${live.researchStarted === 1 ? "this" : `these ${live.researchStarted}`} now — tap any card below and the page fills in on its own.`}
+                </span>
+              ) : null}
             </>
           ) : (
             <>
@@ -188,6 +207,37 @@ export function Prediction() {
         </Deck>
       </DeckBlock>
 
+      {/* A limit stated where the answer is, not in a README nobody opens.
+          This fires when a figure the farmer entered is outside what the model
+          was trained on — 400 mm of rain against a table that stops at 298.
+          Every comparison behind it is like-for-like: °C against °C, pH against
+          pH. It used to fire on nitrogen too, because a card's kg/ha was being
+          matched against a column that turned out to be a fertilizer dose;
+          that was fixed at the source rather than explained away here. */}
+      {live && live.outOfRange.length > 0 ? (
+        <Reveal className="mt-6">
+          <div
+            role="status"
+            className="rounded-[var(--radius-card)] border border-haldi/50 bg-haldi-wash px-4 py-3 text-[14px] leading-relaxed text-haldi-ink"
+          >
+            <strong className="font-semibold">
+              {mr ? "एक मर्यादा सांगायला हवी. " : "One limit worth knowing. "}
+            </strong>
+            {mr
+              ? "तुमचं शेत खालच्या बाबतीत मॉडेलने प्रशिक्षणात बघितलेल्या पल्ल्याबाहेर आहे. उत्तर येतं, पण ते बघितलेल्या पल्ल्याच्या पुढचं गणित आहे — त्यानुसार वजन द्या."
+              : "Your field is outside the range the model was trained on, in these respects. It still answers, but it is extrapolating past what it has seen — weigh the result accordingly."}
+            <ul className="tnum mt-2 space-y-0.5 font-mono text-[13px]">
+              {live.outOfRange.map((w) => (
+                <li key={w.field}>
+                  {w.field} = {w.value} · {mr ? "प्रशिक्षणात" : "trained on"}{" "}
+                  {w.trained_min}–{w.trained_max} · {w.model}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Reveal>
+      ) : null}
+
       <DeckBlock
         icon={<Layers className="size-[18px]" strokeWidth={1.9} aria-hidden />}
         title={mr ? "खतांचा सल्ला" : "Fertilizer plan"}
@@ -197,6 +247,20 @@ export function Prediction() {
             : `${buys} of ${fertilizers.length} worth buying`
         }
       >
+        {/* Which of the three macronutrients the card gave a range to judge
+            against. That range is what decides `apply` versus `hold` — a
+            nutrient with none is not a bag ruled out, it is a bag nothing
+            could rule on, and those two must not look the same. */}
+        {unjudged.length > 0 ? (
+          <Reveal>
+            <p className="mt-2 text-[14px] leading-relaxed text-ink-mute">
+              {mr
+                ? `तुमच्या पत्रिकेवर ${unjudged.join(", ")} साठी मर्यादा छापलेली नाही, त्यामुळे या अन्नद्रव्यांवरून कोणतं खत घ्यायचं की टाळायचं हे ठरवता आलेलं नाही. खालचा सल्ला उरलेल्या आकड्यांवर आहे.`
+                : `Your card prints no range for ${unjudged.join(", ")}, so nothing below could be ruled in or out on ${unjudged.length === 1 ? "that nutrient" : "those nutrients"}. The advice rests on the readings that do carry one.`}
+            </p>
+          </Reveal>
+        ) : null}
+
         {/* Gold, not green — the fertilizer deck blooms in turmeric so the two
             decks read as two different answers at a glance in the dark. */}
         <Deck label={mr ? "खतांचा सल्ला" : "Fertilizer plan"} glow="haldi">

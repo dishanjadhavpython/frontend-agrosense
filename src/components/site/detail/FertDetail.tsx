@@ -3,79 +3,49 @@
 import { useLang } from "@/lib/i18n";
 import { photo } from "@/lib/assets";
 import { FERTILIZERS, biasLabel, biasTint } from "@/data/fertilizers";
-import { CROPS } from "@/data/crops";
-import {
-  PREDICTED_CROPS,
-  verdictLabel,
-  verdictTint,
-  type FertPrediction,
-} from "@/data/prediction";
+import { findFertPrediction } from "@/data/prediction";
+import { fertilizerTopicSlug } from "@/data/topics";
+import { FertVisuals } from "./FertVisuals";
 import { Insights } from "./Insights";
-import { Badge, DetailPage, type DetailLink } from "./DetailPage";
+import { LiveFertBand } from "./LiveBand";
+import { Badge, DetailPage } from "./DetailPage";
 
-/** One bag, and whether to buy it. */
-export function FertDetail({ pick }: { pick: FertPrediction }) {
+/**
+ * One bag, and whether to buy it.
+ *
+ * All seven blends have a page. The verdict is no longer read off the fixture
+ * — it comes from the farmer's own card through `<LiveFertBand>`, because
+ * "apply" or "hold" is a property of their soil, not of the product. A page
+ * opened without a prediction shows the composition and the guidance and
+ * declines to give a verdict at all, which is the honest version.
+ */
+export function FertDetail({ fertKey }: { fertKey: string }) {
   const { lang } = useLang();
   const mr = lang === "mr";
-  const fert = FERTILIZERS.find((f) => f.key === pick.key);
+  const fert = FERTILIZERS.find((f) => f.key === fertKey);
   if (!fert) return null;
 
-  const verdict = verdictLabel[pick.verdict];
   const bias = biasLabel[fert.bias];
-
-  const links: DetailLink[] = pick.crops
-    .map((key) => {
-      const crop = CROPS.find((c) => c.key === key);
-      const cp = PREDICTED_CROPS.find((p) => p.key === key);
-      if (!crop || !cp) return null;
-      return {
-        href: `/prediction/crop/${crop.key}`,
-        lead: mr ? crop.mr : crop.en,
-        sub: `${cp.score}% ${mr ? "जुळतं" : "match"}`,
-      };
-    })
-    .filter((l): l is DetailLink => l !== null);
-
-  // Timing is only a fact when there is an application to time. On a `hold`
-  // it reads as "—", and a facts grid full of dashes is worse than one row
-  // short.
-  const facts =
-    pick.verdict === "apply"
-      ? [
-          ...pick.facts,
-          {
-            label: { mr: "कधी द्यायचं", en: "When to apply" },
-            value: pick.timing,
-          },
-        ]
-      : pick.facts;
+  const pick = findFertPrediction(fertKey);
 
   return (
     <DetailPage
-      eyebrow={mr ? "खताचा सल्ला" : "Fertilizer advice"}
+      eyebrow={mr ? "खत" : "Fertilizer"}
       title={mr ? fert.mr : fert.en}
       subtitle={`${fert.name} · ${fert.npk.join("-")}`}
       photoSrc={photo(fert.img)}
       photoAlt={fert.name}
       badges={
-        <>
-          <Badge className={verdictTint[pick.verdict]}>
-            {mr ? verdict.mr : verdict.en}
-          </Badge>
-          <Badge className={biasTint[fert.bias]}>
-            {mr ? bias.mr : bias.en}
-          </Badge>
-          <Badge className="bg-surface text-ink-mute ring-1 ring-line">
-            {mr ? pick.dose.mr : pick.dose.en}
-          </Badge>
-        </>
+        <Badge className={biasTint[fert.bias]}>{mr ? bias.mr : bias.en}</Badge>
       }
-      why={pick.why}
-      facts={facts}
-      notes={pick.notes}
-      links={links}
-      insights={<Insights category="fertilizer" slug={pick.key} />}
-      linksTitle={mr ? "कोणत्या पिकांसाठी" : "Which of your crops"}
+      live={<LiveFertBand fertKey={fertKey} />}
+      visuals={<FertVisuals fertKey={fertKey} />}
+      why={pick?.why}
+      facts={pick?.facts}
+      notes={pick?.notes}
+      // The research topic is spelled `20-20` where this catalogue says
+      // `20-20-20`. One seam, already mapped, reused rather than repeated.
+      insights={<Insights category="fertilizer" slug={fertilizerTopicSlug(fertKey)} />}
     />
   );
 }

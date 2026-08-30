@@ -1,19 +1,20 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { FERTILIZERS } from "@/data/fertilizers";
-import { findFertPrediction, predictedFertKeys } from "@/data/prediction";
+import { FERTILIZER_KEYS, isFertilizerKey } from "@/data/topics";
 import { FertDetail } from "@/components/site/detail/FertDetail";
 
 /**
- * A page per bag the recommender named — including the ones it named in order
- * to say don't buy them. A "hold" needs a page more than an "apply" does: the
- * reason not to spend money is the part that has to be argued.
+ * A page per blend the fertilizer model can return — all 7.
+ *
+ * Four existed before, from the worked example. `28-28` was not among them,
+ * and it is what a real prediction returned as the second bag worth buying.
  */
 
 export const dynamicParams = false;
 
 export function generateStaticParams() {
-  return predictedFertKeys().map((key) => ({ key }));
+  return FERTILIZER_KEYS.map((key) => ({ key }));
 }
 
 export async function generateMetadata({
@@ -24,7 +25,7 @@ export async function generateMetadata({
   if (!fert) return {};
   return {
     title: `${fert.mr} · ${fert.name}`,
-    description: `${fert.name} (${fert.npk.join("-")}) — whether your field needs it, and how much.`,
+    description: `${fert.name} (${fert.npk.join("-")}) — what is in the bag, and whether your soil needs it.`,
   };
 }
 
@@ -32,8 +33,7 @@ export default async function Page({
   params,
 }: PageProps<"/prediction/fertilizer/[key]">) {
   const { key } = await params;
-  const pick = findFertPrediction(key);
-  if (!pick) notFound();
+  if (!isFertilizerKey(key)) notFound();
 
-  return <FertDetail pick={pick} />;
+  return <FertDetail fertKey={key} />;
 }

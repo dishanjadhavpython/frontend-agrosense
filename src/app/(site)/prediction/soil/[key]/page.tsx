@@ -1,15 +1,21 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SOILS } from "@/data/soils";
-import { PREDICTED_SOIL, predictedSoilKeys } from "@/data/prediction";
+import { SOIL_KEYS, isSoilKey } from "@/data/topics";
 import { SoilDetail } from "@/components/site/detail/SoilDetail";
 
-/** The classified soil. One page, because the classifier returns one answer. */
+/**
+ * A page per soil class the image classifier can return — all 8.
+ *
+ * One existed before: laterite, because that is what the worked example
+ * predicts. A farmer photographing black soil got a 404 on the answer the
+ * classifier had just given them with 90% confidence.
+ */
 
 export const dynamicParams = false;
 
 export function generateStaticParams() {
-  return predictedSoilKeys().map((key) => ({ key }));
+  return SOIL_KEYS.map((key) => ({ key }));
 }
 
 export async function generateMetadata({
@@ -20,7 +26,7 @@ export async function generateMetadata({
   if (!soil) return {};
   return {
     title: `${soil.mr} · ${soil.en}`,
-    description: `${soil.en} — what the classifier saw, and what grows in it.`,
+    description: `${soil.en} — how it behaves, what grows well in it, and what struggles.`,
   };
 }
 
@@ -28,7 +34,7 @@ export default async function Page({
   params,
 }: PageProps<"/prediction/soil/[key]">) {
   const { key } = await params;
-  if (key !== PREDICTED_SOIL.key) notFound();
+  if (!isSoilKey(key)) notFound();
 
-  return <SoilDetail pick={PREDICTED_SOIL} />;
+  return <SoilDetail soilKey={key} />;
 }

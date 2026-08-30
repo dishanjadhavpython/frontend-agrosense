@@ -59,3 +59,6 @@ ml/data/
 # -A` would have quietly staged. The models trained from it are what the app
 # needs, and those are built into the container image rather than committed.
 data set of the project/
+
+# clerk configuration (can include secrets)
+/.clerk/

@@ -15,6 +15,7 @@ export function Section({
   lede,
   children,
   className,
+  eager = false,
 }: {
   id?: string;
   eyebrow?: string;
@@ -24,11 +25,22 @@ export function Section({
   lede?: ReactNode;
   children: ReactNode;
   className?: string;
+  /**
+   * Set on the one or two sections that are above the fold. Everything else
+   * defers its layout and paint until it nears the viewport — see
+   * `.defer-paint`. Opt *out* rather than in, so a section added later gets
+   * the cheap behaviour by default and only the hero has to think about it.
+   */
+  eager?: boolean;
 }) {
   return (
     <section
       id={id}
-      className={cn("mx-auto max-w-7xl px-5 py-20 md:px-8 md:py-28", className)}
+      className={cn(
+        "mx-auto max-w-7xl px-5 py-20 md:px-8 md:py-28",
+        !eager && "defer-paint",
+        className,
+      )}
     >
       {eyebrow || heading || lede ? (
         <header className="max-w-2xl">

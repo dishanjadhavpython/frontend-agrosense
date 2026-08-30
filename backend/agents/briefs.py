@@ -31,6 +31,8 @@ For this crop, find:
    yield here, and the recognised management for them.
 6. MARKET — what mandi prices have done this season, qualitatively. Numbers
    come from the price tool, not from you.
+7. SEED — call `buy_links` once for this crop's seed. Links come from that
+   tool or the section stays empty; never write a shop URL yourself.
 
 Do not spend turns on: botanical taxonomy, global production statistics, or
 history. A farmer wants to know when to sow it and what it will fetch.
@@ -73,9 +75,13 @@ For this fertilizer, find:
    to buy one, and this section is what justifies that advice.
 6. ALTERNATIVES — organic or lower-cost substitutes that supply the same
    nutrient, where they exist.
+7. WHERE TO BUY — call `buy_links` once for this fertilizer. Links come from
+   that tool or the section stays empty; never write a shop URL yourself.
 
 Do not spend turns on: industrial manufacturing processes, or company brand
 comparisons. Naming brands reads as advertising and is not what this is for.
+Listing a shop the tool verified is not the same thing: it is a place that
+stocks the bag, and the page says plainly that it is not an endorsement.
 """.strip()
 
 BRIEFS = {

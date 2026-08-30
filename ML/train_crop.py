@@ -54,8 +54,39 @@ from tabular import (
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "ML" / "models"
 
-#: The seven the Soil Health Card and the weather feed can actually supply.
-FEATURES = ["N", "P", "K", "temperature", "humidity", "ph", "rainfall"]
+#: Four. Not seven.
+#
+# N, P and K were dropped after checking what they actually contain, and the
+# check is worth repeating because the columns are *labelled* to look usable —
+# Kaggle calls them "ratio of Nitrogen content in soil" and the literature
+# reports them as kg/ha, the same unit a Soil Health Card prints.
+#
+# They are not soil measurements. They are the recommended **fertilizer dose**
+# for the crop, jittered:
+#
+#   * Every row of all 2,200 falls in the Soil Health Card's "low" band for N
+#     (<280 kg/ha). Not most — all of them. The column tops out at 140 where an
+#     Indian card routinely reads 250-700.
+#   * Within a single crop, K varies by a standard deviation of ~3 across a
+#     column spanning 5-205. Apple and grapes are both K=200±3. That is a
+#     constant with noise on it, not a measurement.
+#   * The per-crop means are the published doses. Rice reads 80-48-40 against
+#     ICAR's 80-40-40 for rabi rice; maize 78-48-20; cotton 118-46-20.
+#
+# So the model was scoring 99.2% by memorising a fertilizer table, and the
+# served pipeline then handed it a farmer's soil test — a different quantity on
+# a different scale, tens of standard deviations outside anything it trained
+# on. A confident answer to a question it had never been asked.
+#
+# Dropping them costs 3.0 points of cross-validated accuracy (99.2% -> 96.3%)
+# and buys a model whose every input the product can actually supply: pH off
+# the card, and the three field conditions the farmer types in.
+#
+# The card's nutrients still decide the fertilizer, where they belong — through
+# `_need_score` in `backend/models.py`, which compares each reading to the
+# range printed on that farmer's own card and is therefore immune to this whole
+# class of scale mismatch.
+FEATURES = ["temperature", "humidity", "ph", "rainfall"]
 
 CANDIDATE_CSVS = [
     ROOT / "ml" / "data" / "Crop_recommendation.csv",
@@ -87,6 +118,16 @@ def main() -> None:
         raise SystemExit(f"dataset is missing columns: {missing}")
 
     X = frame[FEATURES].to_numpy(dtype=np.float32)
+
+    # Captured before scaling, in the dataset's own units. Serving compares the
+    # farmer's inputs against these and reports anything outside — the card's
+    # available N is kg/ha and this table's N tops out at 140, and until this
+    # was recorded nothing said so. See ML/feature_ranges.py.
+    feature_ranges = {
+        name: [round(float(frame[name].min()), 4), round(float(frame[name].max()), 4)]
+        for name in FEATURES
+    }
+
     encoder = LabelEncoder()
     y = encoder.fit_transform(frame["label"].to_numpy())
 
@@ -135,10 +176,16 @@ def main() -> None:
                 "model": winner["name"],
                 "comparison": results,
                 "features": FEATURES,
+                "feature_ranges": feature_ranges,
                 "note": (
-                    "Trained WITHOUT the four one-hot soil columns of the previous "
-                    "model. Those were np.random.randint(0, 4) and carried no signal; "
-                    "soil now reaches the ranking through soil_crop_suitability.py."
+                    "Trained WITHOUT N/P/K: those columns are the crop's recommended "
+                    "fertilizer dose, not a soil test (all 2,200 rows sit in the Soil "
+                    "Health Card's 'low' N band; within-crop K varies by sd~3 across a "
+                    "5-205 column; per-crop means match ICAR doses). Feeding a card's "
+                    "kg/ha reading to them was a category error, not a unit error. "
+                    "Also without the four one-hot soil columns of the older model, "
+                    "which were np.random.randint(0, 4); soil reaches the ranking "
+                    "through soil_crop_suitability.py and nutrients through _need_score."
                 ),
                 "classes": list(encoder.classes_),
                 "rows": int(len(frame)),

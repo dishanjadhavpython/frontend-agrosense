@@ -1,5 +1,6 @@
 import "server-only";
 
+import { auth } from "@clerk/nextjs/server";
 import type { CardErrorKind, CardReadResult } from "./cardTypes";
 
 /**
@@ -25,6 +26,32 @@ export const serviceHeaders = (): HeadersInit =>
   process.env.AGROSENSE_API_KEY
     ? { "X-AgroSense-Key": process.env.AGROSENSE_API_KEY }
     : {};
+
+/**
+ * The shared secret *and* the farmer's identity.
+ *
+ * Two headers answering two different questions, and neither substitutes for
+ * the other. `X-AgroSense-Key` proves the call came from our own Next server
+ * rather than from the internet. The Clerk bearer token proves *which* farmer
+ * is asking, which is what makes a stored Soil Health Card belong to somebody
+ * — before it existed, `/api/documents` returned every card the service had.
+ *
+ * `getToken()` returns null when nobody is signed in. That is not treated as
+ * an error here: the middleware has already refused the request by then, and
+ * the Python service refuses it again. Two layers, and this is neither of
+ * them.
+ */
+export async function authedServiceHeaders(): Promise<HeadersInit> {
+  const headers: Record<string, string> = { ...(serviceHeaders() as Record<string, string>) };
+  try {
+    const token = await (await auth()).getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  } catch {
+    // Outside a request scope, or Clerk unconfigured. The call proceeds
+    // unauthenticated and the service decides.
+  }
+  return headers;
+}
 
 export class CardError extends Error {
   constructor(
@@ -61,7 +88,7 @@ export async function readCard(file: File): Promise<CardReadResult> {
     response = await fetch(`${BASE}/api/ingest`, {
       method: "POST",
       body,
-      headers: serviceHeaders(),
+      headers: await authedServiceHeaders(),
       // A photograph goes through OCR, which is measured in seconds, not
       // milliseconds. Still bounded — a hung request must not hold the
       // farmer's page open indefinitely.
@@ -78,6 +105,9 @@ export async function readCard(file: File): Promise<CardReadResult> {
     const { message, ocrAvailable } = detailOf(await response.json().catch(() => null));
     if (response.status === 400) throw new CardError("unsupported", message);
     if (response.status === 422) throw new CardError("unreadable", message, ocrAvailable);
+    // The account's daily ceiling. Distinct from every other failure here
+    // because it is the only one where retrying now cannot help.
+    if (response.status === 429) throw new CardError("too-many", message);
     throw new CardError("unknown", message);
   }
 

@@ -45,13 +45,6 @@ export type ExtractedMetric = {
   confidence: "high" | "unconfirmed";
 };
 
-export type CropSuggestion = {
-  name: string;
-  score: number;
-  confidence: number;
-  reason: string;
-};
-
 export type CardReadResult = {
   id: string;
   filename: string;
@@ -75,8 +68,6 @@ export type CardReadResult = {
       summary: string;
       flagged_metrics: string[];
     };
-    recommended_crop: CropSuggestion;
-    alternative_crops: CropSuggestion[];
     fertilizer_plan: {
       title: string;
       status: StatusCode;
@@ -121,21 +112,73 @@ export type PredictedFertilizer = {
   verdict: "apply" | "hold";
 };
 
+/**
+ * One input that sits outside anything its model was trained on.
+ *
+ * This began as a report on the crop model's `N` running 0–140 against a card
+ * reading 245 kg/ha. That turned out not to be a unit mismatch but a category
+ * error — those columns were the crop's recommended fertilizer dose — so both
+ * models were retrained without N, P and K and the mismatch is gone rather
+ * than annotated.
+ *
+ * What remains is the ordinary case: a farmer types 400 mm into a model whose
+ * table stops at 298. Every pair checked is now the same quantity in the same
+ * unit, so a warning means an unusual field, not an incoherent comparison.
+ */
+export type RangeWarning = {
+  /** `ph`, `temperature`, `humidity`, `rainfall`, `moisture`. */
+  field: string;
+  /** Which model this input feeds — `crop` or `fertilizer`. */
+  model: string;
+  value: number;
+  trained_min: number;
+  trained_max: number;
+};
+
 export type PredictionResult = {
   document_id: string;
-  /** Null when no soil photograph was sent — the crops still come back. */
-  soil: PredictedSoil | null;
-  /** False when the ranking is from nutrients alone. */
+  /** Never null — the soil photograph is required to predict at all. */
+  soil: PredictedSoil;
+  /** Always true now. Kept so an older client reading it still works. */
   soil_applied: boolean;
   crops: PredictedCrop[];
   fertilizers: PredictedFertilizer[];
+  /**
+   * Whether the card printed a range for each macronutrient to judge the
+   * submitted reading against. `null` means no bag could be ruled in or out on
+   * that nutrient — materially different from ruling them all out, and the UI
+   * has to say which it is.
+   */
+  nutrient_status: Record<"N" | "P" | "K", StatusCode | null>;
+  out_of_range: RangeWarning[];
+  /** Exactly the eight numbers that were sent, echoed back. The audit trail. */
   readings_used: Record<string, number>;
   needs_review: boolean;
+  /**
+   * What the research agents were asked to go and gather, the moment this
+   * prediction was made. `started` is what is being written right now;
+   * `skipped` is what was already fresh, already running, or left for the
+   * background sweep because the queue was full.
+   *
+   * Optional because a prediction is complete without it — this is enrichment,
+   * and a service with no API key returns an empty result rather than failing.
+   */
+  research?: { started: string[]; skipped: string[]; reason?: string };
 };
 
 /* ---- What the research agents gathered --------------------------------- */
 
 export type SourceRef = { title: string; url: string };
+
+/**
+ * One place to buy, from `seller_server.py`'s allowlist.
+ *
+ * Never written by a model. A wrong scheme link wastes an afternoon; a wrong
+ * shop link takes money, so these come from a fixed list of known Indian
+ * sellers, are fetched and checked before publication, and are re-checked
+ * against the same allowlist by the reviewer on the way out.
+ */
+export type SellerLink = { seller: string; title: string; url: string };
 export type YoutubeRef = { title: string; url: string; channel?: string };
 export type GovernmentScheme = { name: string; description: string; url?: string };
 
@@ -163,6 +206,9 @@ export type TopicReport = {
   prices: PriceObservation[];
   price_note?: string;
   youtube_resources: YoutubeRef[];
+  where_to_buy?: SellerLink[];
+  /** Why there are no links, when there are none. */
+  buy_note?: string;
   sources: SourceRef[];
   /** The Reviewer did not approve it, or the source gate stripped something. */
   needs_review?: boolean;
@@ -175,10 +221,22 @@ export type InsightsResponse =
       available: false;
       reason: string;
       enabled?: boolean;
+      /**
+       * The agents are working on this topic right now.
+       *
+       * A third state, and the page needs it. Hitting Predict now starts
+       * research for exactly what was predicted, so the farmer who opens their
+       * top crop thirty seconds later would otherwise be told it "has not been
+       * researched yet" — true for another minute, and the precise moment they
+       * conclude the feature does not work.
+       */
+      researching?: boolean;
     }
   | {
       available: true;
       enabled: boolean;
+      /** A stored report is showing while a fresher one is being written. */
+      researching?: boolean;
       category: string;
       name: string;
       slug: string;
@@ -195,6 +253,7 @@ export type CardErrorKind =
   | "unsupported" // wrong file type or too big
   | "unreadable" // we got the file but no text came out of it
   | "no-readings" // text came out, but none of the twelve were in it
+  | "too-many" // this account's daily ceiling — the answer is tomorrow
   | "offline" // the reading service is not answering
   | "unknown";
 

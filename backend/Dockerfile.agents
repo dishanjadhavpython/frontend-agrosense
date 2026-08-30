@@ -1,0 +1,46 @@
+# The research sweep, as a Lambda container image.
+#
+# Build from the REPO ROOT, not from backend/:
+#
+#   docker build --platform linux/arm64 -f backend/Dockerfile.agents -t agrosense-agents .
+#
+# Separate from `backend/Dockerfile` for one reason that matters: this image
+# does not need torch, tesseract or the trained models. The sweep researches
+# crops, soils and fertilizers — it reads web pages and writes reports; it
+# never touches a Soil Health Card or runs a prediction. Sharing the service
+# image would ship ~1.5 GB of model weights and an OCR engine into a function
+# that has no use for either, and pay the pull cost on every cold start.
+#
+# A container image rather than a zip because `backend.agents` pulls the agents
+# SDK and five MCP servers, which is comfortably past the 250 MB zip limit.
+
+FROM public.ecr.aws/lambda/python:3.13-arm64
+
+# The task role reads secrets at runtime through the SDK rather than taking
+# them as environment variables — a Lambda's environment is visible in the
+# console and would appear in a `terraform plan` diff.
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# Only what the sweep actually imports. `requirements.txt` is the service's
+# list and carries torch, lightgbm and the OCR stack; installing it here would
+# be most of a gigabyte for code this image never runs.
+RUN pip install --no-cache-dir \
+    "openai-agents>=0.19,<1.0" \
+    "mcp>=1.29,<2.0" \
+    "ddgs>=9.0,<10.0" \
+    "lxml>=5.0,<7.0" \
+    "httpx>=0.27" \
+    "pydantic>=2.0,<3.0" \
+    "python-dotenv>=1.0,<2.0" \
+    "boto3>=1.34"
+
+# `backend/agents` imports `..config`, so the package has to come in whole.
+# The heavy modules beside it are never imported by this entrypoint.
+COPY backend/ ${LAMBDA_TASK_ROOT}/backend/
+
+# Lambda gives a writable /tmp and nothing else. The sweep writes reports to
+# DynamoDB; this is only for whatever the MCP subprocesses scratch.
+ENV AGROSENSE_DATA_DIR=/tmp/agrosense
+ENV PYTHONUNBUFFERED=1
+
+CMD ["backend.agents.lambda_handler.handler"]

@@ -6,15 +6,34 @@ CSV was not on the machine. `data set of the project/fertilizer data/train.csv`
 is that CSV: 750,000 rows, seven products, the Kaggle playground-series-s5e6
 schema the notebook was built against.
 
-The feature set is kept exactly as the served path expects it, because
-`backend/models.py::predict_fertilizers` reconstructs these ten columns by hand
-for every request:
+The feature set the served path expects, which
+`backend/models.py::predict_fertilizers` reconstructs by hand each request:
 
     Temparature, Humidity, Moisture      (scaled)
     Soil Type, Crop Type                 (integer codes)
-    Nitrogen, Potassium, Phosphorous     (scaled)
     temp_humidity_interaction            (scaled temp x scaled humidity)
-    nitrogen_phosphorous_interaction     (scaled N x scaled P)
+
+**Nitrogen, Potassium and Phosphorous were removed**, along with the
+`nitrogen_phosphorous_interaction` built from them. Not because they carried no
+signal, but because the product cannot supply them on a comparable scale.
+
+In this table Nitrogen runs 4-42, Potassium 0-19 and Phosphorous 0-42. A
+Maharashtra Soil Health Card reports available N around 250-700 kg/ha, K around
+110-400. The served path was scaling a card's 245 against a column whose mean
+is ~23 and whose standard deviation is ~9 — roughly twenty-four standard
+deviations out, on every request. Whatever the model then returned was not a
+prediction about that soil; it was the model falling off the end of its own
+training distribution.
+
+Dropping them costs 0.8 points (17.3% -> 16.5% on a 150k subsample, against a
+14.3% random baseline) and leaves every remaining input something the product
+genuinely measures in the same units the table used: °C, %, %, the classifier's
+soil, the crop model's crop.
+
+The farmer's nutrients still decide the recommendation, and more directly than
+before: `_need_score` ranks each bag by what that farmer's own card says is
+missing, comparing every reading to the range printed beside it. That
+comparison is scale-free, which is exactly why it is the part that leads.
 
 "Temparature" is misspelled in the source data. It is preserved rather than
 corrected: the column name is part of the contract between this script, the
@@ -61,7 +80,8 @@ CANDIDATE_CSVS = [
     ROOT / "ml" / "data" / "fertilizer_train.csv",
 ]
 
-NUMERIC = ["Temparature", "Humidity", "Moisture", "Nitrogen", "Potassium", "Phosphorous"]
+#: Nitrogen/Potassium/Phosphorous deliberately absent — see the module docstring.
+NUMERIC = ["Temparature", "Humidity", "Moisture"]
 CATEGORICAL = ["Soil Type", "Crop Type"]
 
 #: The exact order the serving code builds. Saved alongside the model so the
@@ -72,11 +92,7 @@ FEATURE_COLUMNS = [
     "Moisture",
     "Soil Type",
     "Crop Type",
-    "Nitrogen",
-    "Potassium",
-    "Phosphorous",
     "temp_humidity_interaction",
-    "nitrogen_phosphorous_interaction",
 ]
 
 
@@ -118,11 +134,18 @@ def main() -> None:
         encoders[column] = encoder
         print(f"  {column}: {list(encoder.classes_)}")
 
+    # Before the scaler overwrites the columns in place: the raw ranges are
+    # what serving needs to tell a farmer their input is outside anything this
+    # model saw. See ML/feature_ranges.py.
+    feature_ranges = {
+        name: [round(float(frame[name].min()), 4), round(float(frame[name].max()), 4)]
+        for name in NUMERIC
+    }
+
     scaler = StandardScaler()
     frame[NUMERIC] = scaler.fit_transform(frame[NUMERIC])
 
     frame["temp_humidity_interaction"] = frame["Temparature"] * frame["Humidity"]
-    frame["nitrogen_phosphorous_interaction"] = frame["Nitrogen"] * frame["Phosphorous"]
 
     target_encoder = LabelEncoder()
     y = target_encoder.fit_transform(frame["Fertilizer Name"])
@@ -186,6 +209,7 @@ def main() -> None:
             {
                 "features": FEATURE_COLUMNS,
                 "numeric_scaled": NUMERIC,
+                "feature_ranges": feature_ranges,
                 "categorical": {k: list(map(str, v.classes_)) for k, v in encoders.items()},
                 "classes": list(target_encoder.classes_),
                 "rows": int(len(frame)),
@@ -197,9 +221,13 @@ def main() -> None:
                 "source": str(source),
                 "note": (
                     "Kaggle playground-series-s5e6. Labels are synthetic, so a high "
-                    "score means the generator's rule was learned. The served path "
-                    "overrides the ranking with a 'hold' when the farmer's card "
-                    "already reads high for the nutrient a product sells."
+                    "score means the generator's rule was learned. Trained WITHOUT "
+                    "Nitrogen/Potassium/Phosphorous: those columns run 4-42/0-19/0-42 "
+                    "while a Soil Health Card reads hundreds of kg/ha, so serving was "
+                    "scaling the card ~24 standard deviations out of distribution on "
+                    "every request. The farmer's nutrients now reach the answer only "
+                    "through _need_score, which compares each reading to the range "
+                    "printed on that farmer's own card and is therefore scale-free."
                 ),
                 "trained_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             },

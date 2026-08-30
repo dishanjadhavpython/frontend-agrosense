@@ -16,10 +16,20 @@ import type { InsightsResponse } from "@/lib/cardTypes";
  */
 
 export const runtime = "nodejs";
-//: Matches the backend's refresh interval. There is no point asking more often
-//: than the data can change, and a farmer re-opening a page should get it from
-//: the edge rather than waking the Python service.
-export const revalidate = 1800;
+/**
+ * Not cached, and that is a change.
+ *
+ * This used to hold for 1800s, matching the refresh interval — sound while a
+ * report could only change on an eight-hour timer. Predict now starts research
+ * for what it just predicted, so this endpoint carries a `researching` flag
+ * that flips within seconds and a report that lands a minute later. A
+ * half-hour cache would pin the page to "not researched yet" for the entire
+ * time the answer was actually being written.
+ *
+ * The cost is small: upstream this is a JSON file read, not a model call.
+ */
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const BASE = (process.env.AGROSENSE_API_BASE ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 
@@ -41,7 +51,7 @@ export async function GET(
       {
         headers: serviceHeaders(),
         signal: AbortSignal.timeout(8_000),
-        next: { revalidate },
+        cache: "no-store",
       },
     );
 

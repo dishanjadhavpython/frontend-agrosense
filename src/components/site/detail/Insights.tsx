@@ -8,6 +8,7 @@ import {
   Info,
   Landmark,
   PlayCircle,
+  ShoppingCart,
   Sparkles,
 } from "lucide-react";
 import { useLang } from "@/lib/i18n";
@@ -37,6 +38,9 @@ import type { InsightsResponse, TopicReport } from "@/lib/cardTypes";
  *                   ministry's own page. No model wrote these numbers.
  *   haldi (turmeric) freshly gathered, and dated for that reason.
  *   leaf (green)    the product's own voice.
+ *   ink (neutral)   a shop. Deliberately colourless: a place to spend money
+ *                   must never wear the colour this product uses for its own
+ *                   recommendations, or a listing starts to read as advice.
  *
  * Fetched on the client rather than server-rendered, deliberately: the detail
  * page is statically generated at build time, and this content changes every
@@ -54,18 +58,41 @@ export function Insights({
   const mr = lang === "mr";
   const [state, setState] = useState<InsightsResponse | null>(null);
 
+  /**
+   * Fetch, and keep fetching while the agents are on this topic.
+   *
+   * Predict now starts research for exactly what it predicted, so a farmer can
+   * be standing on this page while four agents are writing it. Polling turns
+   * that from "come back later" into a section that fills in under them —
+   * which is the difference between a feature that appears not to work and one
+   * that visibly does.
+   *
+   * Fifteen seconds, and only while `researching` is true. A topic that is
+   * merely stale is not polled: the sweep will refresh it within the half
+   * hour, and nobody is waiting for that.
+   */
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/insights/${category}/${slug}`)
-      .then((response) => response.json())
-      .then((payload: InsightsResponse) => {
-        if (!cancelled) setState(payload);
-      })
-      .catch(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const load = async () => {
+      try {
+        const response = await fetch(`/api/insights/${category}/${slug}`);
+        const payload = (await response.json()) as InsightsResponse;
+        if (cancelled) return;
+        setState(payload);
+        if (payload.researching) timer = setTimeout(load, 15_000);
+      } catch {
+        // A failed poll stops the loop rather than retrying forever against a
+        // service that is down. The panel says so and the page still stands.
         if (!cancelled) setState({ available: false, reason: "" });
-      });
+      }
+    };
+
+    void load();
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
   }, [category, slug]);
 
@@ -98,6 +125,30 @@ export function Insights({
   // state would be a promise nothing is running to keep, which is exactly the
   // failure a farmer cannot detect: an empty section that says wait, forever.
   if (!state.available) {
+    // Being written right now. Distinct from "not researched yet", and worth
+    // its own state: one is a promise about the future, this is a description
+    // of what is happening while the farmer reads.
+    if (state.researching) {
+      return (
+        <Panel mr={mr} dateline={null}>
+          <p className="flex items-start gap-3 text-[15px] leading-relaxed text-ink-soft">
+            <span
+              className="mt-1.5 size-2 shrink-0 animate-pulse rounded-full bg-haldi"
+              aria-hidden
+            />
+            <span>
+              <strong className="font-semibold text-ink">
+                {mr ? "माहिती गोळा करतो आहे. " : "Gathering this now. "}
+              </strong>
+              {mr
+                ? "तुम्ही अंदाज काढल्यावर हे सुरू झालं. साधारण एक मिनिट लागतो — पान आपोआप भरेल, थांबायची गरज नाही."
+                : "This started when you hit Predict. It takes about a minute — the page fills in on its own, so there is nothing to wait for."}
+            </span>
+          </p>
+        </Panel>
+      );
+    }
+
     return (
       <Panel mr={mr} dateline={null}>
         <p className="text-[15px] leading-relaxed text-ink-soft">
@@ -122,7 +173,15 @@ export function Insights({
   return (
     <Panel
       mr={mr}
-      dateline={<Dateline report={report} ageHours={state.age_hours} stale={state.stale} mr={mr} />}
+      dateline={
+        <Dateline
+          report={report}
+          ageHours={state.age_hours}
+          stale={state.stale}
+          researching={state.researching ?? false}
+          mr={mr}
+        />
+      }
     >
       {/* The standing caveat. Not decoration: everything above this line on
           the page was written by a person, and everything below it was
@@ -150,25 +209,32 @@ export function Insights({
         </p>
       ) : null}
 
-      {/* Money first. A farmer who already knows how to grow the crop opens
-          this page for the rate and the subsidy, not the spacing. */}
-      <Prices report={report} mr={mr} />
-      <Schemes report={report} mr={mr} />
+      {/* Money first, then what to do, then where to get it, then what to
+          watch. A farmer who already knows how to grow the crop opens this
+          page for the rate and the subsidy, not the spacing.
 
-      <Bullets
-        items={report.new_developments}
-        title={mr ? "नवीन काय आहे" : "What's new"}
-        icon={<Sparkles className="size-[18px]" strokeWidth={1.9} aria-hidden />}
-        tint="bg-haldi-wash text-haldi-ink"
-      />
-      <Bullets
-        items={report.key_facts}
-        title={mr ? "मुख्य मुद्दे" : "Key points"}
-        icon={<Info className="size-[18px]" strokeWidth={1.9} aria-hidden />}
-        tint="bg-leaf-wash text-leaf"
-      />
+          Laid out as a grid rather than a single column: seven sections
+          stacked vertically is the "wall of text" this restructure exists to
+          undo. Each block is now its own card and can be scanned past. */}
+      <div className="mt-2 grid gap-4 sm:grid-cols-2">
+        <Prices report={report} mr={mr} />
+        <Schemes report={report} mr={mr} />
+        <Bullets
+          items={report.key_facts}
+          title={mr ? "मुख्य मुद्दे" : "Key points"}
+          icon={<Info className="size-[18px]" strokeWidth={1.9} aria-hidden />}
+          tint="bg-leaf-wash text-leaf"
+        />
+        <Bullets
+          items={report.new_developments}
+          title={mr ? "नवीन काय आहे" : "What's new"}
+          icon={<Sparkles className="size-[18px]" strokeWidth={1.9} aria-hidden />}
+          tint="bg-haldi-wash text-haldi-ink"
+        />
+        <WhereToBuy report={report} mr={mr} />
+        <Videos report={report} mr={mr} />
+      </div>
 
-      <Videos report={report} mr={mr} />
       <Sources report={report} mr={mr} />
     </Panel>
   );
@@ -226,11 +292,14 @@ function Dateline({
   report,
   ageHours,
   stale,
+  researching,
   mr,
 }: {
   report: TopicReport;
   ageHours: number | null;
   stale: boolean;
+  /** A newer report is being written while this one is on screen. */
+  researching: boolean;
   mr: boolean;
 }) {
   const count = report.sources?.length ?? 0;
@@ -251,7 +320,7 @@ function Dateline({
       <span
         className={cn(
           "size-2 shrink-0 rounded-full",
-          stale ? "bg-ink-mute" : "bg-leaf",
+          researching ? "animate-pulse bg-haldi" : stale ? "bg-ink-mute" : "bg-leaf",
         )}
         aria-hidden
       />
@@ -270,8 +339,16 @@ function Dateline({
         </>
       ) : null}
       {/* Staleness is stated, not hidden. Serving yesterday's scheme list is
-          fine; implying it is live is not. */}
-      {stale ? (
+          fine; implying it is live is not. "Refreshing now" is the stronger
+          claim and only gets made when a run is genuinely in flight. */}
+      {researching ? (
+        <>
+          <span aria-hidden>·</span>
+          <span className="text-haldi-ink">
+            {mr ? "आत्ता नव्याने घेतो आहे" : "refreshing now"}
+          </span>
+        </>
+      ) : stale ? (
         <>
           <span aria-hidden>·</span>
           <span>{mr ? "लवकरच नव्याने" : "refreshing shortly"}</span>
@@ -287,19 +364,40 @@ function Dateline({
  * The icon tile carries the tint, so provenance is readable before the heading
  * is — blue tiles are government records, turmeric is what changed recently.
  */
+/**
+ * One block inside the panel, as a card.
+ *
+ * These used to be rules across a single column, which meant seven sections
+ * read as one continuous document and a farmer looking for the price had to
+ * scroll past the agronomy to find it. As cards in a grid they can be skipped
+ * over, and the one that matters is findable by its icon tile.
+ *
+ * The icon tile carries the tint, so provenance is readable before the heading
+ * is — blue tiles are government records, turmeric is what changed recently,
+ * neutral is a shop.
+ *
+ * `span` is for content that cannot be halved: a wide price table.
+ */
 function Block({
   title,
   icon,
   tint,
+  span,
   children,
 }: {
   title: string;
   icon: ReactNode;
   tint: string;
+  span?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="mt-9 border-t border-line pt-6 first:border-0 first:pt-0">
+    <div
+      className={cn(
+        "rounded-[var(--radius-card)] border border-line bg-paper p-5",
+        span && "sm:col-span-2",
+      )}
+    >
       <h3 className="flex items-center gap-2.5 text-[1.05rem] font-semibold text-ink font-[family-name:var(--font-display)]">
         <span className={cn("grid size-8 shrink-0 place-items-center rounded-[10px]", tint)}>
           {icon}
@@ -308,6 +406,74 @@ function Block({
       </h3>
       <div className="mt-4">{children}</div>
     </div>
+  );
+}
+
+/**
+ * Where to buy it.
+ *
+ * Every link came from `seller_server.py` — an allowlist of known Indian
+ * sellers, each URL fetched and checked before publication, and re-checked
+ * against the same allowlist by the reviewer. No model wrote these.
+ *
+ * Styled neutrally on purpose. The disclaimer is not boilerplate either: this
+ * lists shops that stock the item, it does not compare prices or vouch for a
+ * seller, and a farmer must not read a listing here as advice to buy from that
+ * particular shop rather than their local dealer.
+ */
+function WhereToBuy({ report, mr }: { report: TopicReport; mr: boolean }) {
+  const links = report.where_to_buy ?? [];
+  if (!links.length && !report.buy_note) return null;
+
+  return (
+    <Block
+      title={mr ? "कुठून घ्यायचं" : "Where to buy"}
+      icon={<ShoppingCart className="size-[18px]" strokeWidth={1.9} aria-hidden />}
+      tint="bg-surface text-ink-soft ring-1 ring-line"
+    >
+      {links.length ? (
+        <>
+          <ul className="space-y-2.5">
+            {links.map((link) => (
+              <li key={link.url}>
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="group flex min-h-16 items-start justify-between gap-3 rounded-[var(--radius-card)] border border-line bg-surface p-4 transition-colors hover:border-ink/25"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-[14px] font-semibold text-ink">
+                      {link.seller}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[13px] text-ink-mute">
+                      {link.title}
+                    </span>
+                  </span>
+                  <ExternalLink
+                    className="mt-0.5 size-4 shrink-0 text-ink-mute"
+                    strokeWidth={2}
+                    aria-hidden
+                  />
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-[12.5px] leading-relaxed text-ink-mute">
+            {mr
+              ? "ही दुकानं फक्त यादीसाठी आहेत — शिफारस नाही. भाव आणि साठा रोज बदलतो, तो तपासलेला नाही. गावातल्या कृषी सेवा केंद्रात स्वस्त मिळू शकतं."
+              : "Listed, not recommended. Prices and stock change daily and were not checked — your local agri-input dealer may well be cheaper."}
+          </p>
+        </>
+      ) : (
+        <p className="text-[15px] leading-relaxed text-ink-mute">
+          {report.buy_note ||
+            (mr
+              ? "ओळखीच्या ऑनलाइन दुकानांत हे सापडलं नाही. गावातल्या कृषी सेवा केंद्रात विचारा."
+              : "No listing could be verified on a known seller. Ask your local agri-input dealer.")}
+        </p>
+      )}
+    </Block>
   );
 }
 
@@ -351,6 +517,7 @@ function Prices({ report, mr }: { report: TopicReport; mr: boolean }) {
 
   return (
     <Block
+      span
       title={mr ? "सरकारी बाजारभाव" : "Government mandi prices"}
       icon={<BadgeIndianRupee className="size-[18px]" strokeWidth={1.9} aria-hidden />}
       tint="bg-jal-wash text-jal-ink"
@@ -421,7 +588,7 @@ function Schemes({ report, mr }: { report: TopicReport; mr: boolean }) {
       {/* One scheme in a two-column grid is a tall half-width card with a
           hole beside it. The columns only appear once there is something to
           put in them. */}
-      <ul className={cn("grid gap-3", schemes.length > 1 && "sm:grid-cols-2")}>
+      <ul className="grid gap-3">
         {schemes.map((scheme) => (
           <li
             key={scheme.name}
@@ -459,7 +626,7 @@ function Videos({ report, mr }: { report: TopicReport; mr: boolean }) {
       icon={<PlayCircle className="size-[18px]" strokeWidth={1.9} aria-hidden />}
       tint="bg-leaf-wash text-leaf"
     >
-      <ul className={cn("grid gap-3", videos.length > 1 && "sm:grid-cols-2")}>
+      <ul className="grid gap-3">
         {videos.map((video) => (
           <li key={video.url}>
             <a
@@ -498,7 +665,7 @@ function Sources({ report, mr }: { report: TopicReport; mr: boolean }) {
   if (!sources.length) return null;
 
   return (
-    <div className="mt-9 border-t border-line pt-5">
+    <div className="mt-6 border-t border-line pt-5">
       <p className="eyebrow text-ink-mute">{mr ? "स्रोत" : "Sources"}</p>
       <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
         {sources.map((source) => (

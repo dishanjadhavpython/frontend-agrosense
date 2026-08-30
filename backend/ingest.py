@@ -86,6 +86,48 @@ class ExtractedDocument:
         return bool(self.ocr_pages)
 
 
+#: What a file's first bytes have to look like for us to believe its extension.
+#:
+#: The extension decides which reader runs; this decides whether the bytes are
+#: plausibly that thing at all. Both checks are needed and neither replaces the
+#: other: a `.pdf` that is really HTML is a file the browser may decide to
+#: render — `X-Content-Type-Options: nosniff` covers the served response, this
+#: covers what we agree to store in the first place.
+#:
+#: Deliberately a prefix check rather than a full parse. It is not trying to
+#: prove the file is valid — the reader does that, and rejects what it cannot
+#: read. It is refusing the cheap, obvious mismatch before spending OCR on it.
+_MAGIC: dict[str, tuple[bytes, ...]] = {
+    "pdf": (b"%PDF-",),
+    "image": (
+        b"\xff\xd8\xff",          # JPEG
+        b"\x89PNG\r\n\x1a\n",     # PNG
+        b"GIF87a", b"GIF89a",      # GIF
+        b"BM",                     # BMP
+        b"II*\x00", b"MM\x00*",    # TIFF, both endiannesses
+        b"RIFF",                   # WebP (container; "WEBP" sits at offset 8)
+        b"\x00\x00\x00",           # HEIC/ISO-BMFF box length prefix
+    ),
+}
+
+
+def looks_like(kind: str, head: bytes) -> bool:
+    """True when `head` plausibly starts a file of this kind."""
+    signatures = _MAGIC.get(kind)
+    if not signatures:
+        return True
+    return any(head.startswith(signature) for signature in signatures)
+
+
+def verify_magic(kind: str, head: bytes) -> None:
+    """Raise `UnsupportedDocument` when the bytes contradict the extension."""
+    if not looks_like(kind, head):
+        raise UnsupportedDocument(
+            "That file's contents do not match its name. Send the Soil Health "
+            "Card as a PDF, JPG or PNG."
+        )
+
+
 def classify(filename: str) -> str:
     """"pdf" | "image" — or raise. Extension-based on purpose: browsers report
     `""` for HEIC often enough that trusting the MIME type loses real files."""
