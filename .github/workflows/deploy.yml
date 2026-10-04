@@ -1,9 +1,9 @@
 # Build, test and ship AgroSense to AWS on every push to main.
 #
-#   test ──────────────┐
-#   prepare ── build ──┴── deploy
-#   (ECR)     (4 ARM64      (terraform apply with the new image tags,
-#              images)       wait for ECS, smoke-test the live site)
+#   prepare ── build ── test ── deploy
+#   (ECR)     (4 ARM64  (inside   (terraform apply with the new image tags,
+#              images)   the api   wait for ECS, smoke-test the live site)
+#                        image)
 #
 # No AWS key is stored in GitHub. Each job that touches AWS runs in the `dev`
 # environment and exchanges GitHub's OIDC token for the deploy role, which
@@ -42,45 +42,6 @@ env:
   TF_VAR_clerk_publishable_key: ${{ vars.CLERK_PUBLISHABLE_KEY }}
 
 jobs:
-  test:
-    name: Reading-service tests
-    runs-on: ubuntu-latest
-    environment: dev
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Fetch the trained models
-        run: aws s3 sync "s3://${{ vars.BUILD_INPUTS_BUCKET }}/ML/models" ML/models --only-show-errors
-
-      - name: Tesseract (English + Marathi)
-        run: sudo apt-get update -q && sudo apt-get install -y -q tesseract-ocr tesseract-ocr-eng tesseract-ocr-mar
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
-
-      # The same order as backend/Dockerfile: CPU torch first, so the
-      # requirements file cannot pull a CUDA build.
-      - name: Install
-        run: |
-          pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
-          pip install -r backend/requirements.txt pytest
-
-      # The job holds AWS credentials (for the models), so the research agents
-      # would otherwise switch themselves on and spend Bedrock calls in a test.
-      - name: Test
-        env:
-          AGROSENSE_AGENTS_ENABLED: "0"
-        run: python -m pytest backend/tests -q -p no:cacheprovider
-
   prepare:
     name: Image repositories
     runs-on: ubuntu-latest
@@ -188,9 +149,35 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
+  test:
+    name: Reading-service tests, in the built image
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    environment: dev
+    timeout-minutes: 20
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # The tests run inside the image that ships — its Tesseract, its torch,
+      # its models — not on the runner's own packages. OCR output differs
+      # between Tesseract builds, and the version that matters is this one.
+      # No AWS credentials go into the container, and the research agents are
+      # off, so a test can never reach Bedrock.
+      - name: Test
+        run: |
+          image="${{ steps.ecr.outputs.registry }}/agrosense-${{ env.ENVIRONMENT }}-api:${{ github.sha }}"
+          docker run --rm --user 0 -e AGROSENSE_AGENTS_ENABLED=0 "$image" \
+            sh -c "pip install --quiet --no-cache-dir pytest && python -m pytest backend/tests -q -p no:cacheprovider"
+
   deploy:
     name: Terraform apply and roll out
-    needs: [test, build]
+    needs: [build, test]
     runs-on: ubuntu-latest
     environment: dev
     timeout-minutes: 75

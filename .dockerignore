@@ -13,13 +13,20 @@
 .env.*
 
 # --- Weight ----------------------------------------------------------------
-.venv/                      # 1.1 GB, and macOS wheels are wrong for linux anyway
-node_modules/               # 551 MB, frontend only
-.next/                      # 668 MB of build output
-data set of the project/    # 354 MB of training images
-aws p2 work properly/       # 257 MB, the previous deployment
-data-sourse/                # 28 MB of source photography
-ML/data/                    # rebuilt image dataset
+# 1.1 GB, and macOS wheels are wrong for linux anyway
+.venv/
+# 551 MB, frontend only
+node_modules/
+# 668 MB of build output
+.next/
+# 354 MB of training images
+data set of the project/
+# 257 MB, the previous deployment
+aws p2 work properly/
+# 28 MB of source photography
+data-sourse/
+# rebuilt image dataset
+ML/data/
 # Checkpoints that are kept for rollback and for the examiner chapter, not
 # served: the service loads ML/models/soil_model.pth and nothing under these.
 ML/models/legacy_8class/
