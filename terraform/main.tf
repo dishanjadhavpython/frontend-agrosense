@@ -264,6 +264,12 @@ module "web" {
   health_start_period = 60
 
   environment_variables = {
+    # Fargate sets HOSTNAME to the task's private DNS name at run time, over
+    # the image's `ENV HOSTNAME=0.0.0.0`, and Next's standalone server binds
+    # to HOSTNAME. Bound there, the load balancer still reached it but the
+    # health check's 127.0.0.1 was refused, and ECS replaced every web task a
+    # few minutes after it started. A task-definition variable wins.
+    HOSTNAME = "0.0.0.0"
     # Service Connect names — private to the namespace.
     AGROSENSE_API_BASE                = "http://api:8000"
     RECOMMEND_API_BASE                = "http://engine:8001"

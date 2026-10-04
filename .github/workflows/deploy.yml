@@ -224,6 +224,26 @@ jobs:
           cluster=$(terraform output -raw ecs_cluster)
           services=$(terraform output -json ecs_services | jq -r '.[]' | tr '\n' ' ')
           aws ecs wait services-stable --cluster "$cluster" --services $services
+          # Stable only means the task count is right. A task whose own health
+          # check fails is counted until ECS replaces it minutes later — which
+          # is how a web task bound to the wrong address once passed this step.
+          # So also wait for every running task to report HEALTHY.
+          health() {
+            for s in $services; do
+              arns=$(aws ecs list-tasks --cluster "$cluster" --service-name "$s" \
+                --desired-status RUNNING --query 'taskArns' --output text)
+              aws ecs describe-tasks --cluster "$cluster" --tasks $arns \
+                --query 'tasks[].[group,healthStatus]' --output text
+            done
+          }
+          for i in $(seq 1 40); do
+            states=$(health)
+            echo "$states" | awk '$2 != "HEALTHY" { bad = 1 } END { exit bad }' && break
+            sleep 15
+          done
+          echo "$states"
+          echo "$states" | awk '$2 != "HEALTHY" { bad = 1 } END { exit bad }' \
+            || { echo "a task did not become healthy"; exit 1; }
 
       - name: Smoke test
         working-directory: terraform
