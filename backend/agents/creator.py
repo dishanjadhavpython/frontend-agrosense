@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from agents import Agent, Runner
 
-from ..config import AGENTS_MODEL
+from .model_provider import agent_model
 from .context import dated_context
 from .schemas import ResearchFindings, TopicReport
 from .topics import Topic
@@ -41,7 +41,7 @@ async def create_report(topic: Topic, findings: ResearchFindings) -> TopicReport
     agent = Agent(
         name="Creator Agent",
         instructions=f"{dated_context()}\n\n{CREATOR_INSTRUCTIONS}",
-        model=AGENTS_MODEL,
+        model=agent_model(),
         output_type=TopicReport,
     )
     result = await Runner.run(agent, _build_prompt(topic, findings), max_turns=6)

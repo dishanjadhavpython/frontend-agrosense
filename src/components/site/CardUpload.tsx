@@ -33,10 +33,13 @@ import { Reveal } from "@/components/ui/Reveal";
 import { Button } from "@/components/ui/Button";
 import { CardResult } from "./CardResult";
 import {
-  PredictionInputs,
-  valuesFromCard,
-  type PredictionValues,
-} from "./PredictionInputs";
+  LocationSeason,
+  initialLocationSeasonValues,
+  isLocationSeasonComplete,
+  type LocationSeasonValues,
+} from "./LocationSeason";
+import type { Recommendation, RecommendErrorBody } from "@/lib/recommendTypes";
+import type { SoilErrorBody, SoilReadResult } from "@/lib/soilTypes";
 
 /**
  * Where the inputs actually go in.
@@ -84,7 +87,10 @@ function usePicked({
 }: {
   allowPdf: boolean;
   mr: boolean;
-  onChange: () => void;
+  /** The file just accepted, or null when the zone was cleared. Passed
+   *  rather than left for the caller to read off `picked`, so a listener
+   *  can act on it in the same tick instead of in an effect. */
+  onChange: (file: File | null) => void;
 }) {
   const [picked, setPicked] = useState<Picked | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +147,7 @@ function usePicked({
       }
 
       setError(null);
-      onChange();
+      onChange(file);
       setPicked({
         file,
         kind: isPdf ? "pdf" : "image",
@@ -154,7 +160,7 @@ function usePicked({
   const clear = useCallback(() => {
     setPicked(null);
     setError(null);
-    onChange();
+    onChange(null);
     // Without this, choosing the same file twice in a row fires no change event.
     if (cameraInput.current) cameraInput.current.value = "";
     if (fileInput.current) fileInput.current.value = "";
@@ -174,7 +180,10 @@ export function CardUpload() {
 
   // Held above this section: "the card, read" further down the page has to be
   // describing the same document, not a fixture.
-  const { card: result, setCard, setPrediction } = useCard();
+  // `soil` further down is the photo *picker*; this is the classifier's answer
+  // for the picked photo, so it is named apart from it.
+  const { card: result, setCard, setPrediction, setRecommendation,
+          soil: soilResult, setSoil } = useCard();
   const [reading, setReading] = useState<boolean>(false);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -183,36 +192,102 @@ export function CardUpload() {
   // the soil photo does not — the readings belong to the document, and losing
   // four typed field conditions because somebody retook a photograph would be
   // its own small cruelty.
-  const [values, setValues] = useState<PredictionValues | null>(null);
-  const [predicting, setPredicting] = useState<boolean>(false);
-  const [predictFailure, setPredictFailure] = useState<string | null>(null);
+  const recommendRef = useRef(0);
+  const soilRef = useRef(0);
+  const [classifying, setClassifying] = useState<boolean>(false);
+  const [soilFailure, setSoilFailure] = useState<string | null>(null);
 
-  const setValue = useCallback((name: keyof PredictionValues, value: string) => {
-    setValues((current) => (current ? { ...current, [name]: value } : current));
-    // A changed input makes the answer on screen a different field's answer.
-    setPrediction(null);
-    setPredictFailure(null);
-  }, [setPrediction]);
+  // Where the field is and when it is being sown. Unlike everything above it,
+  // this survives having no card at all: the engine falls back to the taluka's
+  // own Soil Health Card distribution, so a location-only "what could I grow
+  // here" is a supported answer rather than a degraded one. Initialised empty
+  // and refilled from the card when one arrives.
+  const [location, setLocation] = useState<LocationSeasonValues>(
+    () => initialLocationSeasonValues(null),
+  );
+  const [recommending, setRecommending] = useState<boolean>(false);
+  const [recommendFailure, setRecommendFailure] = useState<string | null>(null);
+
+  const patchLocation = useCallback((patch: Partial<LocationSeasonValues>) => {
+    setLocation((current) => ({ ...current, ...patch }));
+    // A changed taluka, season or reading makes the advice on screen advice
+    // for somewhere else. Same rule the eight numbers follow above.
+    setRecommendation(null);
+    setRecommendFailure(null);
+  }, [setRecommendation]);
+
+  /**
+   * The soil photograph, on its own, to the classifier.
+   *
+   * One input where `/api/predict` took nine. It needs no card — naming a
+   * soil from a picture never did — and it needs none of the four field
+   * conditions, which the recommendation engine now derives from the taluka.
+   *
+   * The answer is both shown and used. Its full probability vector goes to the
+   * engine with the recommendation request, which weighs it against the
+   * taluka's surveyed soil type; `SoilAgreement` then shows the farmer what
+   * the photograph was allowed to do. It can move which crops are ranked, and
+   * it can never lift a veto on depth, drainage or salinity.
+   *
+   * Takes the file rather than reading it back off `soil.picked`, so the
+   * picker can call this the moment a photo is accepted. Driving it from an
+   * effect on `picked` instead meant setting state during render.
+   */
+  const classifySoil = useCallback(async (file: File) => {
+
+    const submission = ++soilRef.current;
+    setClassifying(true);
+    setSoilFailure(null);
+    setSoil(null);
+
+    try {
+      const body = new FormData();
+      body.append("soil", file, file.name);
+
+      const response = await fetch("/api/soil", { method: "POST", body });
+      const payload = await response.json().catch(() => null);
+      if (submission !== soilRef.current) return;
+
+      if (!response.ok) {
+        const error = payload as SoilErrorBody | null;
+        setSoilFailure(
+          error?.message?.[mr ? "mr" : "en"] ??
+            (mr
+              ? "माती ओळखता आली नाही. पुन्हा लॉग इन करून प्रयत्न करा."
+              : "The soil could not be named. Try signing in again."),
+        );
+        return;
+      }
+      setSoil(payload as SoilReadResult);
+    } catch {
+      if (submission !== soilRef.current) return;
+      setSoilFailure(
+        mr
+          ? "माती ओळखता आली नाही. जोडणी तपासून पुन्हा प्रयत्न करा."
+          : "The soil could not be named. Check your connection and try again.",
+      );
+    } finally {
+      if (submission === soilRef.current) setClassifying(false);
+    }
+  }, [mr, setSoil]);
 
   // A new file invalidates the reading on screen. Leaving the old chart up
   // beside a different input is the one genuinely dangerous state here.
   const invalidate = useCallback(() => {
     setCard(null);
     setFailure(null);
-    setPredictFailure(null);
-    // Including the four field conditions. They are not re-derived from a new
-    // card and they are not carried over from the old one — a value that
-    // survives into a different document without being retyped is the kind of
-    // quiet inheritance this whole change exists to remove.
-    setValues(null);
   }, [setCard]);
 
-  // Swapping only the soil photo keeps the card and the typed numbers, but the
-  // prediction it produced is now about a different soil.
-  const invalidateSoil = useCallback(() => {
-    setPrediction(null);
-    setPredictFailure(null);
-  }, [setPrediction]);
+  // Swapping the soil photo keeps the card and the location: the ground in
+  // the new picture is what changed, so only its classification is dropped.
+  const invalidateSoil = useCallback((file: File | null) => {
+    setSoil(null);
+    setSoilFailure(null);
+    // Classified the moment it is chosen. Unlike the card read there is
+    // nothing for the farmer to confirm first — no figure to correct, no box
+    // to fill — so a button here would be a step that exists to be pressed.
+    if (file) void classifySoil(file);
+  }, [setSoil, classifySoil]);
 
   const card = usePicked({ allowPdf: true, mr, onChange: invalidate });
   const soil = usePicked({ allowPdf: false, mr, onChange: invalidateSoil });
@@ -242,9 +317,7 @@ export function CardUpload() {
     const submission = ++submissionRef.current;
     setReading(true);
     setFailure(null);
-    setPredictFailure(null);
     setCard(null);
-    setValues(null);
 
     try {
       const body = new FormData();
@@ -270,8 +343,13 @@ export function CardUpload() {
       }
       const read = payload as CardReadResult;
       setCard(read);
-      // The four the card carries, prefilled; the four for the field, blank.
-      setValues(valuesFromCard(read));
+      // And all twelve, onto the engine's `soil_test`. The location and season
+      // the farmer may already have chosen are kept — those are facts about
+      // the field, not about the document.
+      setLocation((current) => ({
+        ...current,
+        soilTest: initialLocationSeasonValues(read).soilTest,
+      }));
     } catch {
       if (submission !== submissionRef.current) return;
       setFailure(
@@ -285,54 +363,71 @@ export function CardUpload() {
   }, [card.picked, mr, setCard]);
 
   /**
-   * Step two: the eight confirmed numbers and the soil photograph, to the
-   * three models.
+   * The taluka, the season, and whichever of the twelve card readings were
+   * confirmed, to the recommendation engine.
    *
-   * Awaited into a pending state, unlike the read's old fire-and-forget
-   * prediction. This is the farmer acting on values they entered — a silent
-   * failure here would leave them looking at a worked example believing it was
-   * their field.
+   * Deliberately not gated on a card. `soil_test` is omitted entirely when
+   * there is nothing to send, and the engine answers from the taluka's own
+   * Soil Health Card distribution — saying so in the response, which is what
+   * the results section reports rather than passing it off as the farmer's
+   * own reading.
    */
-  const predict = useCallback(async () => {
-    if (!result || !values || !soil.picked) return;
+  const askForRecommendation = useCallback(async () => {
+    if (!isLocationSeasonComplete(location)) return;
 
-    const submission = ++submissionRef.current;
-    setPredicting(true);
-    setPredictFailure(null);
-    setPrediction(null);
+    const submission = ++recommendRef.current;
+    setRecommending(true);
+    setRecommendFailure(null);
+    setRecommendation(null);
 
     try {
-      const body = new FormData();
-      body.append("documentId", result.id);
-      body.append("soil", soil.picked.file, soil.picked.file.name);
-      for (const [name, value] of Object.entries(values)) body.append(name, value);
-
-      const response = await fetch("/api/predict", { method: "POST", body });
+      const hasSoilTest = Object.keys(location.soilTest).length > 0;
+      const response = await fetch("/api/recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          district: location.district,
+          taluka: location.taluka,
+          season: location.season,
+          irrigated: location.irrigated,
+          top_k: 5,
+          ...(hasSoilTest ? { soil_test: location.soilTest } : {}),
+          // The photograph, if one has been classified. The engine weighs the
+          // whole distribution against the taluka's soil survey; it may move
+          // texture and available water and may never lift a safety veto, so
+          // sending it can change which crops are ranked but not which are
+          // ruled out on depth, drainage or salinity.
+          ...(soilResult?.probabilities
+            ? { soil_photo: soilResult.probabilities }
+            : {}),
+        }),
+      });
       const payload = await response.json().catch(() => null);
-      if (submission !== submissionRef.current) return;
+      if (submission !== recommendRef.current) return;
 
       if (!response.ok) {
-        const error = payload as CardErrorBody | null;
-        setPredictFailure(
+        const error = payload as RecommendErrorBody | null;
+        setRecommendFailure(
           error?.message?.[mr ? "mr" : "en"] ??
             (mr
-              ? "अंदाज काढता आला नाही. पुन्हा लॉग इन करून प्रयत्न करा."
-              : "The prediction failed. Try signing in again."),
+              ? "शिफारस काढता आली नाही. पुन्हा लॉग इन करून प्रयत्न करा."
+              : "The recommendation failed. Try signing in again."),
         );
         return;
       }
-      setPrediction(payload as PredictionResult);
+      setRecommendation(payload as Recommendation);
     } catch {
-      if (submission !== submissionRef.current) return;
-      setPredictFailure(
+      if (submission !== recommendRef.current) return;
+      setRecommendFailure(
         mr
-          ? "अंदाज काढता आला नाही. जोडणी तपासून पुन्हा प्रयत्न करा."
-          : "The prediction could not be made. Check your connection and try again.",
+          ? "शिफारस काढता आली नाही. जोडणी तपासून पुन्हा प्रयत्न करा."
+          : "The recommendation could not be made. Check your connection and try again.",
       );
     } finally {
-      if (submission === submissionRef.current) setPredicting(false);
+      if (submission === recommendRef.current) setRecommending(false);
     }
-  }, [result, values, soil.picked, mr, setPrediction]);
+  }, [location, mr, setRecommendation, soilResult]);
+
 
   const extracted = result ? readingsFromExtraction(result.soil_metrics) : null;
 
@@ -470,6 +565,25 @@ export function CardUpload() {
               </p>
             ) : null}
 
+            {/* The soil photo is classified on its own now, the moment it is
+                chosen, so both its states belong beside the card's. */}
+            {classifying ? (
+              <p role="status" className="mt-3 text-[14px] text-ink-mute">
+                {mr
+                  ? "मातीचा फोटो तपासला जात आहे…"
+                  : "Looking at the soil in your photo…"}
+              </p>
+            ) : null}
+
+            {soilFailure ? (
+              <p
+                role="alert"
+                className="mt-4 rounded-[var(--radius-card)] border border-anar/50 bg-anar-wash px-4 py-3 text-[14px] leading-relaxed text-anar"
+              >
+                {soilFailure}
+              </p>
+            ) : null}
+
             {/* The read failed. Said here rather than inside a dropzone,
                 because this is about the card as a whole, not the file pick. */}
             {failure ? (
@@ -520,17 +634,36 @@ export function CardUpload() {
               Inside the same bordered card again: check the figure, correct
               it if the photograph lied, add what the card cannot know, then
               predict — one object, in the order it happens. */}
-          {result && values ? (
-            <PredictionInputs
-              result={result}
-              values={values}
-              onChange={setValue}
-              onPredict={predict}
-              predicting={predicting}
-              soilPhotoMissing={!soil.picked}
-              failure={predictFailure}
-            />
-          ) : null}
+          {/* ---- Where the field is, and when. ---------------------------
+              Outside the `result &&` guard every block above sits behind,
+              because this step is the one that does not need a card. A
+              farmer who has uploaded nothing can still pick a taluka and a
+              season and get an answer from the taluka's own distribution.
+
+              TRANSITIONAL: this sits alongside `<PredictionInputs>` rather
+              than replacing it, because the soil-photo prediction path below
+              is still live and `<Prediction>` still renders from it. The four
+              field-condition inputs there — temperature, humidity, rainfall,
+              moisture — are what this step makes unnecessary: the engine
+              derives all four from the taluka. They come out in the phase
+              that repositions the soil photograph. */}
+          <LocationSeason
+            card={result}
+            values={location}
+            onChange={patchLocation}
+            onSubmit={askForRecommendation}
+            submitting={recommending}
+            failure={recommendFailure}
+          />
+
+          {/* `<PredictionInputs>` — the eight-field form — came off the
+              page here. Both of its jobs moved: the four card readings are
+              confirmed in `<LocationSeason>`'s soil-test panel, which asks
+              for all twelve the card prints rather than four, and the four
+              field conditions (temperature, humidity, rainfall, moisture)
+              are gone outright — the engine derives every one of them from
+              the taluka's own climatology. The component is left in the tree
+              rather than deleted, the same way `<Outcomes>` was. */}
         </div>
       </Reveal>
     </Section>

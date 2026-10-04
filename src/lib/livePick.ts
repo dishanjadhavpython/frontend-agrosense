@@ -1,7 +1,7 @@
 "use client";
 
 import { useCard } from "./cardState";
-import { fromApi } from "@/data/predictionFromApi";
+import { fromApi, type LivePrediction } from "@/data/predictionFromApi";
 import type { StatusCode } from "./cardTypes";
 
 /**
@@ -42,6 +42,12 @@ export type LiveFert = {
 };
 
 /** True when this page was reached from a real prediction this session. */
+/** The whole live prediction in the site's own shape, or null without one. */
+export function useLivePrediction(): LivePrediction | null {
+  const { prediction } = useCard();
+  return prediction ? fromApi(prediction) : null;
+}
+
 export function useHasPrediction(): boolean {
   return useCard().prediction !== null;
 }

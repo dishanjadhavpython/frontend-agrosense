@@ -54,10 +54,49 @@ const DELIVERED = new Set<string>([
   "soils/sandy.jpg",
   "soils/yellow.jpg",
 
-  // ---- Fertilizers: all 7. ----------------------------------------------
+  // ---- Crops: the 12 the engine recommends. All delivered. --------------
+  // Every one of these is a crop the recommendation engine ranks and doses,
+  // and the card reserves its image box whether or not the file exists — the
+  // placeholder fills it, so a delivered photograph changes pixels and never
+  // layout.
+  //
+  // To add one: save it as `public/img/crops/<key>.jpg` and uncomment its
+  // line. That is the whole procedure.
+  //
+  // Square, subject centred, shot in the field rather than on a studio white —
+  // the 22 above set that direction and these have to sit beside them.
+  //
+  // Delivered 4 Oct 2026, squared on the subject and saved at 900 px where the
+  // source allowed. Six came as small screenshots and are kept at their own
+  // size rather than upscaled — linseed 235, sorghum 251, finger millet 316,
+  // sesame 333, pearl millet 361, safflower 368 px — so they are visibly soft
+  // on a 2x screen, and sesame and safflower are seed on a studio white rather
+  // than field shots. Worth reshooting. Three carried a Google Lens button
+  // from the screenshot, removed: painted out on the white two, covered with
+  // matching slate on pearl millet.
+  "crops/sorghum.jpg",       // Jowar · ज्वारी (grain, with a wooden spoon)
+  "crops/pearlmillet.jpg",   // Bajra · बाजरी
+  "crops/fingermillet.jpg",  // Ragi · नाचणी (the brick-red grain, in a bowl)
+  "crops/wheat.jpg",         // Wheat · गहू   (NOT upload/wheat.jpg below —
+  //                            that one is deliberately bokeh-soft atmosphere
+  //                            for the upload zone, not a crop portrait.)
+  "crops/soybean.jpg",       // Soyabean · सोयाबीन
+  "crops/groundnut.jpg",     // Groundnut · भुईमूग (pods in the shell)
+  "crops/safflower.jpg",     // Safflower · करडई
+  "crops/sunflower.jpg",     // Sunflower · सूर्यफूल
+  "crops/sesame.jpg",        // Sesamum · तीळ (black sesame)
+  "crops/linseed.jpg",       // Linseed · जवस
+  "crops/mustard.jpg",       // Rapeseed & Mustard · मोहरी (the flower)
+  "crops/sugarcane.jpg",     // Sugarcane · ऊस
+  // (The first photograph supplied as finger millet showed round yellow grain
+  // — proso or foxtail millet — and was not used; a farmer would see at once
+  // that it is not ragi.)
+
+  // ---- Fertilizers: all 9. ----------------------------------------------
   // Real bag photographs. Cropped square with an upward bias rather than
   // centred, so the grade printed on the sack stays clear of the NPK bars
-  // drawn across the bottom of the card.
+  // drawn across the bottom of the card. MOP (263 px) and SSP (642 px) came
+  // smaller than the 900 px of the first seven and are kept at their size.
   "fertilizers/10-26-26.jpg",
   "fertilizers/14-35-14.jpg",
   "fertilizers/17-17-17.jpg",
@@ -65,6 +104,8 @@ const DELIVERED = new Set<string>([
   "fertilizers/28-28.jpg",
   "fertilizers/dap.jpg",
   "fertilizers/urea.jpg",
+  "fertilizers/mop.jpg",   // MOP · एमओपी  · 0-0-60 (Bharat MOP, Indian Potash)
+  "fertilizers/ssp.jpg",   // SSP · एसएसपी · 0-16-0 (Mahadhan, 16 % P₂O₅)
 
   // ---- Everything else --------------------------------------------------
   // Golden-hour wheat, already bokeh-soft in camera — it sits behind the

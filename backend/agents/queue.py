@@ -140,7 +140,7 @@ def request_now(predictions: dict[str, list[str]]) -> dict[str, Any]:
         # right now with an exhausted one. Recorded rather than ignored.
         _last_decline = {
             "at": datetime.now(timezone.utc).isoformat(),
-            "reason": "Agents are disabled (no OPENAI_API_KEY, or switched off).",
+            "reason": "Agents are disabled (no model credentials, or switched off).",
         }
         return {"started": [], "skipped": [], "reason": _last_decline["reason"]}
 

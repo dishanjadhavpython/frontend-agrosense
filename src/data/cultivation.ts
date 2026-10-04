@@ -363,6 +363,174 @@ export const CULTIVATION: Cultivation[] = [
       en: "Shade-grown, and effectively confined to the Western Ghats and their spurs.",
     },
   },
+  // ---- Maharashtra's own, added with the recommendation engine -------------
+  // Twelve crops the engine ranks that this file had no calendar for. Same
+  // standing caveat as everything above: compiled from ICAR package-of-
+  // practices and state department sowing windows by a non-agronomist, and
+  // wanting a check before anyone plants against it.
+  //
+  // Two of these carry a genuine complication the single `season` field
+  // cannot hold. Sorghum and sunflower are grown in more than one season, and
+  // in Maharashtra the *rabi* crop is the important one — rabi jowar (शाळू) on
+  // stored monsoon moisture is the state's signature dryland crop. The window
+  // below is the national one, as this file's header requires, and the note
+  // carries what the field cannot.
+  {
+    key: "sorghum",
+    season: "kharif",
+    sow: run(M.jun, M.jul),
+    harvest: run(M.oct, M.nov),
+    states: ["MH", "KA", "MP", "RJ", "TG", "AP", "TN", "GJ", "UP"],
+    durationDays: [100, 130],
+    water: 2,
+    note: {
+      mr: "महाराष्ट्रात रब्बी ज्वारी (शाळू) जास्त महत्त्वाची — सप्टेंबर-ऑक्टोबरमध्ये साठलेल्या ओलीवर पेरतात, जानेवारी-फेब्रुवारीत काढणी.",
+      en: "In Maharashtra the rabi crop matters more: sown September-October on moisture the monsoon left in the profile, cut January-February.",
+    },
+  },
+  {
+    key: "pearlmillet",
+    season: "kharif",
+    sow: run(M.jun, M.jul),
+    harvest: run(M.sep, M.oct),
+    states: ["RJ", "MH", "GJ", "UP", "HR", "KA", "MP", "TN"],
+    durationDays: [75, 95],
+    water: 1,
+    note: {
+      mr: "सगळ्यात कमी पाण्यावर येणारं तृणधान्य. जिथे इतर काही टिकत नाही तिथेही उतरतं.",
+      en: "The least thirsty cereal here, and the one that still yields on land where nothing else holds.",
+    },
+  },
+  {
+    key: "wheat",
+    season: "rabi",
+    sow: run(M.nov, M.dec),
+    harvest: run(M.mar, M.apr),
+    states: ["UP", "PB", "HR", "MP", "RJ", "BR", "MH", "GJ", "UK"],
+    durationDays: [110, 140],
+    water: 4,
+    note: {
+      mr: "थंडी लागते. उशिरा पेरलं आणि फेब्रुवारीत उन्हाळा लवकर आला की दाणा भरत नाही.",
+      en: "Needs the cold. Sown late, a warm February catches it while the grain is still filling and the yield never comes.",
+    },
+  },
+  {
+    key: "fingermillet",
+    season: "kharif",
+    sow: run(M.jun, M.jul),
+    harvest: run(M.oct, M.nov),
+    states: ["KA", "TN", "MH", "OD", "AP", "UK", "JH"],
+    durationDays: [100, 130],
+    water: 2,
+    note: {
+      mr: "डोंगरउतारावर आणि हलक्या जमिनीत येतं. साठवणुकीत वर्षानुवर्षं टिकतं.",
+      en: "Grows on hill slopes and thin soils, and stores for years without spoiling — which is most of why it is grown.",
+    },
+  },
+  {
+    key: "soybean",
+    season: "kharif",
+    sow: run(M.jun, M.jul),
+    harvest: run(M.sep, M.oct),
+    states: ["MP", "MH", "RJ", "KA", "TG"],
+    durationDays: [90, 110],
+    water: 2,
+    note: {
+      mr: "पेरणीच्या वेळी पुरेशी ओल हवी. काढणीच्या वेळी पाऊस आला की शेंगा जागेवरच फुटतात.",
+      en: "Wants moisture at sowing and dry weather at harvest — rain on a ripe crop splits the pods in the field.",
+    },
+  },
+  {
+    key: "groundnut",
+    season: "kharif",
+    sow: run(M.jun, M.jul),
+    harvest: run(M.oct, M.nov),
+    states: ["GJ", "RJ", "TN", "AP", "KA", "MH", "TG", "MP"],
+    durationDays: [100, 130],
+    water: 3,
+    note: {
+      mr: "शेंगा जमिनीत लागतात, म्हणून भुसभुशीत हलकी जमीन लागते. चिकण जमिनीत काढणी अवघड.",
+      en: "The pods form underground, so it needs loose, light soil — on heavy clay the crop is there but lifting it wrecks it.",
+    },
+  },
+  {
+    key: "safflower",
+    season: "rabi",
+    sow: run(M.sep, M.oct),
+    harvest: run(M.jan, M.feb),
+    states: ["MH", "KA", "TG", "MP", "AP"],
+    durationDays: [120, 140],
+    water: 1,
+    note: {
+      mr: "खोल मुळं साठलेली ओल शोधतात, म्हणून कोरडवाहू रब्बीत टिकतं. काट्यांमुळे काढणी कष्टाची.",
+      en: "Deep roots chase stored moisture, which is why it survives a rainfed rabi. The spines make harvest hard work.",
+    },
+  },
+  {
+    key: "sunflower",
+    season: "rabi",
+    sow: run(M.sep, M.oct),
+    harvest: run(M.jan, M.feb),
+    states: ["KA", "MH", "AP", "TG", "BR", "OD", "HR", "PB"],
+    durationDays: [90, 110],
+    water: 3,
+    note: {
+      mr: "खरीप आणि उन्हाळी हंगामातही घेतात. मधमाश्या नसल्या की दाणे पोकळ राहतात.",
+      en: "Also grown in kharif and summer. Without bees working the heads the seed sets hollow, whatever the soil gives.",
+    },
+  },
+  {
+    key: "sesame",
+    season: "kharif",
+    sow: run(M.jun, M.jul),
+    harvest: run(M.sep, M.oct),
+    states: ["MP", "RJ", "UP", "GJ", "MH", "WB", "TN", "AP"],
+    durationDays: [80, 95],
+    water: 1,
+    note: {
+      mr: "कमी पाण्यावर लवकर येणारं पीक. बोंडं फुटायच्या आत काढणी करावी लागते.",
+      en: "Quick and undemanding, but it must be cut before the capsules split — a few days late and the seed is on the ground.",
+    },
+  },
+  {
+    key: "linseed",
+    season: "rabi",
+    sow: run(M.oct, M.nov),
+    harvest: run(M.feb, M.mar),
+    states: ["MP", "CT", "UP", "MH", "BR", "JH", "RJ", "OD"],
+    durationDays: [110, 140],
+    water: 1,
+    note: {
+      mr: "उरलेल्या ओलीवर घेतात. सरकारी खतशिफारशीत हे पीक फार थोड्या जिल्ह्यांत नोंदलेलं आहे.",
+      en: "Grown on whatever moisture is left. The government dose table carries it for only a handful of districts, so its recipe is usually a state-wide estimate.",
+    },
+  },
+  {
+    key: "mustard",
+    season: "rabi",
+    sow: run(M.oct, M.nov),
+    harvest: run(M.feb, M.mar),
+    states: ["RJ", "HR", "MP", "UP", "WB", "GJ", "PB", "AS"],
+    durationDays: [110, 140],
+    water: 2,
+    note: {
+      mr: "थंडीत चांगलं येतं. गंधकाची कमतरता असली की तेलाचं प्रमाण घटतं.",
+      en: "A cold-weather crop, and one of the few where a sulphur shortage shows up directly as less oil in the seed.",
+    },
+  },
+  {
+    key: "sugarcane",
+    season: "perennial",
+    sow: run(M.oct, M.nov),
+    harvest: run(M.dec, M.mar),
+    states: ["UP", "MH", "KA", "TN", "GJ", "BR", "HR", "AP", "TG", "PB"],
+    durationDays: [300, 450],
+    water: 5,
+    note: {
+      mr: "महाराष्ट्रात आडसाली (ऑक्टोबर-नोव्हेंबर), पूर्वहंगामी आणि सुरू (जानेवारी-मार्च) अशा तीन लागवडी. वर्षभर पाणी लागतं.",
+      en: "Maharashtra plants it three ways — adsali in October-November, pre-seasonal, and suru in January-March. All three want water for the whole of a long life.",
+    },
+  },
 ];
 
 export const findCultivation = (key: string): Cultivation | undefined =>

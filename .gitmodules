@@ -1,0 +1,3 @@
+[submodule "ml engine for Recommendation"]
+	path = ml engine for Recommendation
+	url = https://github.com/dishanjadhavpython/crop-and-fertiliser-recommendation-engine.git

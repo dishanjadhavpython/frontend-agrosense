@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .config import OLLAMA_MODEL
+from .config import BEDROCK_CHAT_MODEL_ID, LLM_PROVIDER, OLLAMA_MODEL
 from .llm import OllamaGenerationError, generate_farmer_answer
 
 STOP_WORDS = {
@@ -149,8 +149,13 @@ def _answer_from_readings(metrics: list[dict[str, Any]], needs_review: bool) -> 
 
 def _fallback_source_note(has_sources: bool) -> str:
     if has_sources:
-        return "Llama was unavailable, so AgroSense used a fallback answer from indexed report snippets."
+        return "The answer model was unavailable, so AgroSense used a fallback answer from indexed report snippets."
     return "No report snippets were available for fallback."
+
+
+def _answer_model_name() -> str:
+    """The model that actually wrote the answer, for the note shown under it."""
+    return BEDROCK_CHAT_MODEL_ID if LLM_PROVIDER == "bedrock" else OLLAMA_MODEL
 
 
 def _llama_source_note(
@@ -163,12 +168,12 @@ def _llama_source_note(
         document_name = str(document_context.get("name") or document_context.get("filename") or "").strip()
 
     if has_sources and document_name:
-        return f"Generated with {OLLAMA_MODEL} using retrieved context from {document_name}."
+        return f"Generated with {_answer_model_name()} using retrieved context from {document_name}."
     if has_sources:
-        return f"Generated with {OLLAMA_MODEL} using indexed report context."
+        return f"Generated with {_answer_model_name()} using indexed report context."
     if document_name:
-        return f"Generated with {OLLAMA_MODEL} using the selected report summary plus general farming guidance."
-    return f"Generated with {OLLAMA_MODEL} using general farming knowledge."
+        return f"Generated with {_answer_model_name()} using the selected report summary plus general farming guidance."
+    return f"Generated with {_answer_model_name()} using general farming knowledge."
 
 
 def generate_answer(
@@ -200,7 +205,7 @@ def generate_answer(
         )
         return {
             "answer": answer,
-            "answer_mode": "llama_rag" if retrieved_chunks else "llama_general",
+            "answer_mode": "llm_rag" if retrieved_chunks else "llm_general",
             "source_note": _llama_source_note(
                 has_sources=bool(retrieved_chunks),
                 document_context=document_context,
@@ -219,7 +224,7 @@ def generate_answer(
     if llm_error:
         return {
             "answer": (
-                "I couldn't use the local Llama model right now. "
+                "I couldn't reach the answer model right now. "
                 f"{llm_error}"
             ),
             "answer_mode": "llm_unavailable",
@@ -229,7 +234,7 @@ def generate_answer(
     return {
         "answer": (
             "No indexed report content is available yet. Upload a PDF for report-based answers, "
-            "or start the local Llama service for general farming questions."
+            "or check that the answer model (Bedrock) is configured for general farming questions."
         ),
         "answer_mode": "no_context",
         "source_note": _fallback_source_note(False),

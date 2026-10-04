@@ -74,8 +74,10 @@
   --color-on-light-soft: #3d4b42;
 
   /* --- Type --- */
-  --font-display: var(--font-anek), ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-sans: var(--font-mukta), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display:
+    var(--font-anek), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-sans:
+    var(--font-mukta), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", monospace;
   /* Reserved for the report surface and pull-quotes, where it should read
      like a printed government document. That is its one job. */
@@ -85,8 +87,10 @@
   --radius-photo: 28px;
 
   /* Soft, never harsh. Cards sit on paper; they don't hover over it. */
-  --shadow-card: 0 1px 2px rgba(20, 32, 26, 0.04), 0 8px 24px rgba(20, 32, 26, 0.06);
-  --shadow-panel: 0 2px 6px rgba(20, 32, 26, 0.08), 0 16px 40px rgba(20, 32, 26, 0.14);
+  --shadow-card:
+    0 1px 2px rgba(20, 32, 26, 0.04), 0 8px 24px rgba(20, 32, 26, 0.06);
+  --shadow-panel:
+    0 2px 6px rgba(20, 32, 26, 0.08), 0 16px 40px rgba(20, 32, 26, 0.14);
 
   /* The house easing. Everything decelerates like settling soil. */
   --ease-regur: cubic-bezier(0.16, 1, 0.3, 1);
@@ -156,10 +160,10 @@
   /* Shadows stop being shadows in the dark — nothing casts onto black.
      What separates a card from the ground here is its own lit edge, so
      the "shadow" is a hairline plus a wide, very soft pool. */
-  --shadow-card: 0 0 0 1px rgba(232, 239, 228, 0.06),
-    0 8px 28px rgba(0, 0, 0, 0.5);
-  --shadow-panel: 0 0 0 1px rgba(232, 239, 228, 0.09),
-    0 18px 48px rgba(0, 0, 0, 0.66);
+  --shadow-card:
+    0 0 0 1px rgba(232, 239, 228, 0.06), 0 8px 28px rgba(0, 0, 0, 0.5);
+  --shadow-panel:
+    0 0 0 1px rgba(232, 239, 228, 0.09), 0 18px 48px rgba(0, 0, 0, 0.66);
 }
 
 @layer base {
@@ -185,7 +189,8 @@
     overflow-x: hidden;
     /* Only fires on toggle: the theme attribute is written before first
        paint, so there is no initial state to transition from. */
-    transition: background-color 0.35s var(--ease-regur),
+    transition:
+      background-color 0.35s var(--ease-regur),
       color 0.35s var(--ease-regur);
   }
 
@@ -545,6 +550,375 @@
 }
 
 /* ============================================================
+   THE EXAMINER SKIN — gallery white, soft gold, and nothing else.
+
+   The farmer product is REGUR: green earth, turmeric, paper under a
+   Baramati sun. The examiner walkthrough is a different room — a
+   gallery wall rather than a field — and it should say so the moment
+   you cross into it.
+
+   Nothing below is a new component. Exactly like `paper-island`, this
+   re-declares the same tokens locally, so `text-ink`, `bg-surface` and
+   `border-line` keep working inside it with no idea a palette happened.
+   That is the whole reason the product is untouched: one class on one
+   wrapper div, and not a line changed in any existing component.
+
+   Discipline, not decoration. Chrome is achromatic warm neutral; colour
+   appears only where it carries data. Two accent hues exist in the
+   entire system — gold, plus clay and slate held strictly in reserve
+   for "rejected" and "external". A chart with five categorical colours
+   is a failure of this palette, not a use of it.
+
+   Every ratio in the comments is measured, not judged.
+   ============================================================ */
+
+@theme {
+  /* Tokens the product has no use for; only the examiner view reads them.
+     Declared here so Tailwind emits `bg-gold-3`, `text-clay` and the rest
+     as real utilities. Light values; the skin re-declares them for dark. */
+
+  /* The accent that is allowed to carry text, on any of the three grounds:
+     5.60:1 on white, 5.14:1 on a card, 4.71:1 in a well. The obvious gold
+     does not clear AA anywhere (#9c7b14 is 3.99:1 on white), and the first
+     value tried here cleared it on two grounds out of three — #856810 is
+     4.43:1 in a well, which the audit caught and which is exactly the kind
+     of near-miss that only survives when nobody measures. */
+  --color-gold: #80640f;
+  /* The one bright fill. Ink on it is 7.34:1; white on it is 2.42:1, so
+     this colour never carries white text. Same rule `haldi` lives under. */
+  --color-gold-solid: #c9a227;
+  --color-gold-wash: #faf6ea;
+
+  /* The data ramp. One hue, five steps, read as a density and never as
+     five categories — the same contract the leaf ramp states above. */
+  --color-gold-1: #f7efd4;
+  --color-gold-2: #ead69b;
+  --color-gold-3: #d9bc5e;
+  --color-gold-4: #a8871c;
+  --color-gold-5: #6e5608;
+
+  /* What text may sit on each step. These are tokens rather than a rule
+     like "ink below 4, paper above" because the switch point is not the
+     same in both themes: on paper, ink still clears AA on step 4 (5.20:1)
+     and only step 5 needs white; in the dark the ramp inverts and the
+     switch falls a step earlier. A component reads the token and is right
+     in both. */
+  --color-on-gold-1: #17181a;
+  --color-on-gold-2: #17181a;
+  --color-on-gold-3: #17181a;
+  --color-on-gold-4: #17181a;
+  --color-on-gold-5: #ffffff;
+
+  /* Two more accents, each bound to one meaning for the whole walkthrough.
+     The rule that keeps five hues from becoming decoration is not "use less
+     colour" — it is that a chart may never pick a hue because it needs a
+     fourth series. Green is a measured improvement; blue is a neutral
+     quantity or a system we call out to. Both clear AA on all three grounds:
+     green 7.45/6.84/6.27, blue 8.27/7.59/6.96. */
+  --color-green: #25603c;
+  --color-blue: #255080;
+
+  /* Held in reserve. Clay marks a thing that was tried and rejected;
+     slate marks a system we do not own. Neither is ever decorative. */
+  --color-clay: #8c4a38;
+  --color-slate: #46535c;
+
+  /* Tinted grounds for chips and tiles. The accent stays legible on its own
+     wash: gold 5.19, green 6.51, blue 7.14, clay 5.67. */
+  --color-green-wash: #e8f2ec;
+  --color-blue-wash: #e8eff6;
+  --color-clay-wash: #f7eae6;
+
+  /* What a glyph is set in when it sits on a filled accent tile. White on
+     paper (5.60 on the weakest, gold); the ground colour in the dark, where
+     the accents become the light. */
+  --color-on-accent: #ffffff;
+
+  /* A recessed ground for code, tables and figure wells. */
+  --color-sunk: #efebe3;
+  /* `line` is a hairline and decorative; this one bounds a control or a
+     figure and therefore has to clear 3:1 as a non-text UI component.
+     Measured 3.41:1. */
+  --color-line-strong: #948a76;
+
+  --font-serif: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
+}
+
+@utility examiner-skin {
+  /* Gallery white. The ground is true white and the cards are a faint warm
+     grey that sits *on* it — the inverse of the product, where cards are
+     white on a tinted page. Depth comes from a hairline and one soft
+     shadow, never from colour. */
+  --color-paper: #ffffff;
+  --color-surface: #f7f5f0;
+  --color-line: #e6e2d9;
+
+  /* 17.77:1 on the ground, 16.31:1 on a card. */
+  --color-ink: #17181a;
+  --color-ink-soft: #45484d; /* 9.18:1 */
+  --color-ink-mute: #63676d; /* 5.69:1 — clears AA at 14px */
+
+  /* The bento form wants a larger radius than the product's 20px — both
+     reference dashboards sit around 24 with 12 on the elements inside. */
+  --radius-card: 24px;
+
+  /* The product's shadow is a cast shadow on tinted paper. Here the cards
+     barely lift: a hairline doing most of the work and a wide, very soft
+     pool underneath. Anything heavier reads as a web app rather than a
+     printed report. */
+  --shadow-card:
+    0 1px 2px rgba(23, 24, 26, 0.03), 0 10px 30px rgba(23, 24, 26, 0.05);
+  --shadow-panel:
+    0 2px 6px rgba(23, 24, 26, 0.05), 0 22px 56px rgba(23, 24, 26, 0.1);
+
+  /* ---- Diagram palette -------------------------------------------------
+     The charts are read next to their axes and stay quiet; a diagram is read
+     as a picture and has to carry its meaning at a glance, so the nodes are
+     filled rather than outlined. These are brighter and more saturated than
+     the chart washes above on purpose — they are the only place in the
+     section where a large area of colour is allowed.
+
+     The hue binding is the one the rest of the walkthrough uses, narrowed to
+     what a node can be:
+       slate  outside the system        blue   a service we run
+       green  a store or artefact we own gold  the entry point / chosen path
+       clay   rejected or vetoed
+     Measured on `ink #17181a`: every fill clears 14:1, `ink-mute` clears
+     4.5:1, and each border clears 3:1 against its own fill. */
+  /* The mark's green, exactly as supplied: R170 G221 B59. */
+  --color-brand: #aadd3b;
+  --brand-plaque: #17181a;
+
+  --dia-canvas: #fbfaf7;
+  --dia-grid: #e8e5de;
+  --dia-edge: #3b4149;
+
+  --dia-fill-blue: #dbeafb;
+  --dia-line-blue: #1f6fc4;
+  --dia-fill-green: #d6f2e1;
+  --dia-line-green: #0e8a4e;
+  --dia-fill-gold: #fbefc9;
+  --dia-line-gold: #b07d06;
+  --dia-fill-clay: #fce1d8;
+  --dia-line-clay: #c24a26;
+  --dia-fill-slate: #e4e8f2;
+  --dia-line-slate: #4d5e96;
+  --dia-fill-mute: #ffffff;
+  --dia-line-mute: #8a9099;
+  --dia-fill-ink: #ffffff;
+  --dia-line-ink: #8a9099;
+}
+
+/* Same system, re-grounded — and the ramp reverses its lightness without
+   reversing its meaning, so no figure needs a dark-mode branch. */
+:root[data-theme="dark"] .examiner-skin {
+  --color-paper: #101113;
+  --color-surface: #191b1e;
+  --color-sunk: #0b0c0d;
+  --color-line: #26282c;
+  --color-line-strong: #646870; /* 3.38:1 */
+
+  --color-ink: #f2f0ea; /* 16.58:1 */
+  --color-ink-soft: #bcbcb6; /* 9.90:1 */
+  --color-ink-mute: #93969a; /* 6.36:1 */
+
+  /* Gold becomes the light. 10.86:1 on the ground — and because it is now
+     the brightest thing in the room it has to be spent even more sparingly
+     than on paper. */
+  --color-gold: #e4c158;
+  --color-gold-solid: #e4c158;
+  --color-gold-wash: #221d10;
+
+  --color-gold-1: #2a2410;
+  --color-gold-2: #4a3d14;
+  --color-gold-3: #7a651c;
+  --color-gold-4: #b99a2e;
+  --color-gold-5: #e4c158;
+
+  /* The switch falls a step earlier here: ink still clears AA on step 3
+     (4.97:1) but not on step 4, where the ground colour takes over. */
+  --color-on-gold-1: #f2f0ea;
+  --color-on-gold-2: #f2f0ea;
+  --color-on-gold-3: #f2f0ea;
+  --color-on-gold-4: #101113;
+  --color-on-gold-5: #101113;
+
+  /* The accents brighten and become the light, exactly as gold does. */
+  --color-green: #6bc98e; /* 9.33:1 */
+  --color-blue: #7fb3e0; /* 8.48:1 */
+  --color-clay: #d98c77; /* 7.17:1 */
+  --color-slate: #8fa6b4; /* 7.45:1 */
+
+  --color-green-wash: #16261d;
+  --color-blue-wash: #132230;
+  --color-clay-wash: #2a1713;
+
+  /* A bright tile now needs a dark glyph, not a white one. */
+  --color-on-accent: #101113;
+
+  --shadow-card:
+    0 0 0 1px rgba(242, 240, 234, 0.05), 0 10px 30px rgba(0, 0, 0, 0.5);
+  --shadow-panel:
+    0 0 0 1px rgba(242, 240, 234, 0.08), 0 22px 56px rgba(0, 0, 0, 0.62);
+
+  /* The diagram fills invert to deep tints of the same hues. Re-measured,
+     not eyeballed: `ink-mute` on the darkest of them is 4.93:1. */
+  /* The green does not change — it is the mark's. The plaque goes
+     green-black so the glow has a ground to bloom against. 11.42:1. */
+  --color-brand: #aadd3b;
+  --brand-plaque: #121611;
+
+  --dia-canvas: #141619;
+  --dia-grid: #24272b;
+  --dia-edge: #a2a9b2;
+
+  --dia-fill-blue: #122a40;
+  --dia-line-blue: #7fb3e0;
+  --dia-fill-green: #0f2e22;
+  --dia-line-green: #6bc98e;
+  --dia-fill-gold: #2e2409;
+  --dia-line-gold: #e4c158;
+  --dia-fill-clay: #3d1d14;
+  --dia-line-clay: #d98c77;
+  --dia-fill-slate: #1f2532;
+  --dia-line-slate: #9fb0cc;
+  --dia-fill-mute: #1f2225;
+  --dia-line-mute: #8a9199;
+  --dia-fill-ink: #1f2225;
+  --dia-line-ink: #8a9199;
+}
+
+/* ------------------------------------------------------------
+   The type scale. Five levels, defined once, never overridden per
+   page — the drift that makes a long document feel amateur starts
+   with the sixth size someone adds locally.
+   ------------------------------------------------------------ */
+
+/* The chapter number. Small, gold, monospaced — it reads as an index
+   entry rather than a heading, which is what lets the title beside it
+   be quiet. */
+@utility ex-num {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--color-gold);
+  text-transform: uppercase;
+}
+
+@utility ex-title {
+  font-family: var(--font-serif);
+  font-size: clamp(2rem, 1.3rem + 2.6vw, 3.5rem);
+  font-weight: 400;
+  line-height: 1.06;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  color: var(--color-ink);
+}
+
+@utility ex-head {
+  font-family: var(--font-serif);
+  font-size: clamp(1.25rem, 1.05rem + 0.8vw, 1.75rem);
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  color: var(--color-ink);
+}
+
+@utility ex-lede {
+  font-size: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);
+  line-height: 1.6;
+  color: var(--color-ink-soft);
+  text-wrap: pretty;
+}
+
+/* Captions and the source line under every figure. */
+@utility ex-caption {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-ink-mute);
+}
+
+/* ------------------------------------------------------------
+   The brand line.
+
+   `#aadd3b` is the mark's own green, given as R170 G221 B59. It is
+   spectacular on a dark ground and unusable on a light one: measured,
+   it is 11.10:1 on the section's ink and **1.60:1 on white**, which is
+   not a near miss — it is illegible, and the section's hard gate is
+   4.5:1 in both themes.
+
+   So the line is never set on the page. It is set on a plaque: a dark
+   rounded band that carries the exact colour in both themes, reads as
+   a brand lockup rather than as a heading that happened to be
+   coloured, and keeps the measurement honest either way.
+   ------------------------------------------------------------ */
+
+@utility ex-brand-plaque {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  background: var(--brand-plaque);
+  padding: 0.3rem 0.75rem;
+}
+
+@utility ex-brand-title {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-brand);
+  white-space: nowrap;
+}
+
+/* The glow, dark theme only — as asked, and it only makes sense there.
+   On the light plaque the band is already the brightest contrast on the
+   page; a bloom on top of it would read as a blur, not as light. Two
+   stops rather than one: a tight halo that gives the letters an edge,
+   and a wide, faint one that puts them in a room. */
+:root[data-theme="dark"] .ex-brand-title {
+  text-shadow:
+    0 0 0.6em rgba(170, 221, 59, 0.55),
+    0 0 1.6em rgba(170, 221, 59, 0.28);
+}
+
+/* The ground a diagram is drawn on.
+
+   The dot grid is the one piece of pure decoration in this section, and it is
+   here because it does two jobs an examiner can feel: it tells a reader where
+   the picture starts and the card stops, and it gives the boxes something to
+   sit on instead of floating. It is one background-image on one element — no
+   extra DOM, and it disappears on paper, where the page edge already says the
+   same thing. */
+@utility ex-dia-canvas {
+  background-color: var(--dia-canvas);
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    var(--dia-grid) 1.2px,
+    transparent 0
+  );
+  background-size: 16px 16px;
+}
+
+/* A label sitting on a connector. The ground is the canvas, not the card, so
+   the pill cuts the line cleanly rather than sitting in a grey box on it. */
+@utility ex-dia-pill {
+  background: var(--dia-canvas);
+}
+
+/* The provenance line. Monospaced because it is a file path, and a path
+   set in the body face reads as prose and gets skimmed. */
+@utility ex-source {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-ink-mute);
+  word-break: break-word;
+}
+
+/* ============================================================
    Print — reports leave the screen as documents.
    ============================================================ */
 
@@ -566,5 +940,86 @@
     break-inside: avoid;
     border: 1px solid #ccc !important;
     box-shadow: none !important;
+  }
+
+  /* The walkthrough prints in its light palette whatever the reader had on
+     screen. A printed copy is a likely outcome of the viva, and forty pages of
+     near-black card on white paper is both unreadable and a cartridge. The
+     tokens are re-declared rather than the theme toggled, because the toggle is
+     a data attribute on :root that the print stylesheet cannot reach. */
+  :root[data-theme="dark"] .examiner-skin {
+    --color-paper: #ffffff;
+    --color-surface: #ffffff;
+    --color-sunk: #f4f1ea;
+    --color-line: #d9d4c8;
+    --color-line-strong: #8a8172;
+
+    --color-ink: #17181a;
+    --color-ink-soft: #3c3f44;
+    --color-ink-mute: #55595f;
+
+    --color-gold: #6e5608;
+    --color-gold-solid: #6e5608;
+    --color-gold-wash: #f7f1df;
+    --color-gold-1: #f4ecd6;
+    --color-gold-2: #e3d19c;
+    --color-gold-3: #c2a74f;
+    --color-gold-4: #94770f;
+    --color-gold-5: #6e5608;
+    --color-on-gold-1: #17181a;
+    --color-on-gold-2: #17181a;
+    --color-on-gold-3: #17181a;
+    --color-on-gold-4: #ffffff;
+    --color-on-gold-5: #ffffff;
+
+    --color-green: #1f5334;
+    --color-blue: #1f4571;
+    --color-clay: #7c4030;
+    --color-slate: #3d4952;
+    --color-green-wash: #e6f0ea;
+    --color-blue-wash: #e6eef6;
+    --color-clay-wash: #f5e8e4;
+    --color-on-accent: #ffffff;
+
+    /* On paper the plaque would be a solid black bar with green type in it —
+       a lot of toner for a line of text, and the mark's green is far too light
+       to print legibly anyway. The band drops away and the words set in a
+       darkened version of the same hue: 7.08:1 on white. */
+    --color-brand: #3f6212;
+    --brand-plaque: transparent;
+
+    /* Ink on paper: the tints stay, faintly, because they are the only thing
+       telling a reader which boxes belong together once colour is all the
+       page has left. The dot grid is suppressed separately. */
+    --dia-canvas: #ffffff;
+    --dia-grid: #ffffff;
+    --dia-edge: #3b4149;
+    --dia-fill-blue: #e7f0fb;
+    --dia-line-blue: #1f6fc4;
+    --dia-fill-green: #e3f4ea;
+    --dia-line-green: #0e8a4e;
+    --dia-fill-gold: #fcf3d8;
+    --dia-line-gold: #b07d06;
+    --dia-fill-clay: #fce9e2;
+    --dia-line-clay: #c24a26;
+    --dia-fill-slate: #eceff6;
+    --dia-line-slate: #4d5e96;
+    --dia-fill-mute: #ffffff;
+    --dia-line-mute: #8a9099;
+    --dia-fill-ink: #ffffff;
+    --dia-line-ink: #8a9099;
+  }
+
+  /* Ink, not toner: a grid of several thousand dots is a real cost on a
+     printer and carries nothing the page edge does not already say. */
+  .examiner-skin .ex-dia-canvas {
+    background-image: none;
+  }
+
+  /* A figure that scrolls on screen has nowhere to scroll on paper. */
+  .examiner-skin [data-source],
+  .examiner-skin figure,
+  .examiner-skin .hide-scrollbar {
+    overflow: visible !important;
   }
 }

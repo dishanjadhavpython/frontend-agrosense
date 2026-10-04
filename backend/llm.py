@@ -6,6 +6,9 @@ from typing import Any
 import httpx
 
 from .config import (
+    BEDROCK_CHAT_MODEL_ID,
+    LLM_CONFIGURED,
+    LLM_PROVIDER,
     OLLAMA_BASE_URL,
     OLLAMA_ENABLED,
     OLLAMA_MODEL,
@@ -14,8 +17,18 @@ from .config import (
 )
 
 
-class OllamaGenerationError(RuntimeError):
-    """Raised when the local Ollama-backed Llama model cannot answer."""
+class AnswerGenerationError(RuntimeError):
+    """Raised when the answer model — Nova on Bedrock, or a local Ollama — cannot answer."""
+
+
+#: The old name, kept so callers written against the Ollama-only module still work.
+OllamaGenerationError = AnswerGenerationError
+
+_SYSTEM_PROMPT = (
+    "You are AgroSense, a practical agriculture assistant for farmers. "
+    "Answer clearly, avoid hallucinating soil readings, say when advice is general guidance, "
+    "and structure replies so they are easy to scan in a chat UI."
+)
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -177,18 +190,43 @@ def generate_farmer_answer(
     document_context: dict[str, Any] | None = None,
     conversation_history: list[dict[str, Any]] | None = None,
 ) -> str:
+    prompt = _build_prompt(question, retrieved_chunks, document_context, conversation_history)
+    if LLM_PROVIDER == "bedrock":
+        return _answer_with_bedrock(prompt)
+    return _answer_with_ollama(prompt)
+
+
+def _answer_with_bedrock(prompt: str) -> str:
+    """Nova on Bedrock — the default, and the only option that exists on AWS."""
+    from .bedrock import BedrockUnavailable, converse, text_of
+
+    if not LLM_CONFIGURED:
+        raise AnswerGenerationError("No AWS credentials are configured for Bedrock.")
+    try:
+        response = converse(
+            modelId=BEDROCK_CHAT_MODEL_ID,
+            system=[{"text": _SYSTEM_PROMPT}],
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"maxTokens": 1200, "temperature": 0.2},
+        )
+    except BedrockUnavailable as exc:
+        raise AnswerGenerationError(f"Bedrock could not answer: {exc}") from exc
+    answer = _clean_model_output(text_of(response))
+    if not answer:
+        raise AnswerGenerationError("Bedrock returned an empty answer.")
+    return answer
+
+
+def _answer_with_ollama(prompt: str) -> str:
+    """A local Llama through Ollama, for development without an AWS account."""
     if not OLLAMA_ENABLED:
-        raise OllamaGenerationError("Local Llama support is disabled.")
+        raise AnswerGenerationError("Local Llama support is disabled.")
 
     timeout = httpx.Timeout(OLLAMA_REQUEST_TIMEOUT_SECONDS, connect=min(10.0, OLLAMA_REQUEST_TIMEOUT_SECONDS))
     payload = {
         "model": OLLAMA_MODEL,
-        "system": (
-            "You are AgroSense, a practical agriculture assistant for farmers. "
-            "Answer clearly, avoid hallucinating soil readings, say when advice is general guidance, "
-            "and structure replies so they are easy to scan in a chat UI."
-        ),
-        "prompt": _build_prompt(question, retrieved_chunks, document_context, conversation_history),
+        "system": _SYSTEM_PROMPT,
+        "prompt": prompt,
         "stream": False,
         "options": {
             "temperature": OLLAMA_TEMPERATURE,

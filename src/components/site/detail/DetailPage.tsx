@@ -44,6 +44,8 @@ export function DetailPage({
   links,
   linksTitle,
   live,
+  isLive,
+  example = false,
   visuals,
   insights,
 }: {
@@ -72,6 +74,17 @@ export function DetailPage({
    * sample-figures caveat stands.
    */
   live?: ReactNode;
+  /**
+   * Whether `live` actually has this farmer's result in it. Not inferred from
+   * `live`: a band element is always truthy even when it renders nothing, and
+   * keying the caveat on it meant the caveat never showed at all.
+   */
+  isLive: boolean;
+  /**
+   * `why`, `facts` and `notes` came from the worked example — a sample card,
+   * another field. Labelled as such wherever they are shown.
+   */
+  example?: boolean;
   /** Calendar, regions, composition — the parts meant to be read at a glance. */
   visuals?: ReactNode;
   /** The research section, when the page has a topic to show one for. */
@@ -132,7 +145,7 @@ export function DetailPage({
             a band showing the farmer's own 49% would be false in the one
             direction that matters — it would teach them to discount a number
             that is actually theirs. */}
-        {live ? null : (
+        {isLive ? null : (
           <p
             role="status"
             className="mt-6 rounded-[var(--radius-card)] border border-haldi/50 bg-haldi-wash px-4 py-3 text-[14px] leading-relaxed text-haldi-ink"
@@ -143,6 +156,11 @@ export function DetailPage({
             {mr
               ? "हे पान या विषयाची सर्वसाधारण माहिती देतं — तुमच्या शेताचा अंदाज नाही. तुमचा अंदाज बघायचा असेल तर आधी पत्रिका द्या. खालची ताजी माहिती मात्र खरी आणि आजची आहे."
               : "This page is general information about the subject, not a reading of your field — send your card to get that. The latest updates below are real and current."}
+            {example
+              ? mr
+                ? " “नमुना उदाहरण” असं लिहिलेले भाग एका नमुना पत्रिकेवरचे आहेत, तुमच्या शेताचे नाहीत."
+                : " Sections marked “worked example” come from a sample card, not from your field."
+              : null}
           </p>
         )}
 
@@ -176,7 +194,13 @@ export function DetailPage({
       {why ? (
         <section className="mt-12 rounded-[var(--radius-card)] border-l-4 border-leaf bg-leaf-1/60 py-6 pr-6 pl-7">
           <p className="eyebrow text-ink-mute">
-            {mr ? "तुमच्या शेतासाठी का" : "Why this, for your field"}
+            {example
+              ? mr
+                ? "नमुना उदाहरण — त्या शेतासाठी का"
+                : "Worked example — why, for that field"
+              : mr
+                ? "तुमच्या शेतासाठी का"
+                : "Why this, for your field"}
           </p>
           <p className="mt-3 text-[1.15rem] leading-relaxed text-ink-soft">
             {mr ? why.mr : why.en}
@@ -186,7 +210,13 @@ export function DetailPage({
 
       {/* ---- The figures. */}
       {facts && facts.length > 0 ? (
-        <Section title={mr ? "थोडक्यात" : "At a glance"}>
+        <Section
+          title={
+            example
+              ? mr ? "थोडक्यात — नमुना उदाहरण" : "At a glance — worked example"
+              : mr ? "थोडक्यात" : "At a glance"
+          }
+        >
           <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
             {facts.map((f) => (
               <div
@@ -208,7 +238,13 @@ export function DetailPage({
       {/* ---- The prose. Set in the document face: this is the part that
               should read like something printed and kept, not like UI. */}
       {notes && notes.length > 0 ? (
-        <Section title={mr ? "काय लक्षात ठेवायचं" : "What to keep in mind"}>
+        <Section
+          title={
+            example
+              ? mr ? "काय लक्षात ठेवायचं — नमुना उदाहरण" : "What to keep in mind — worked example"
+              : mr ? "काय लक्षात ठेवायचं" : "What to keep in mind"
+          }
+        >
           <div className="space-y-5">
             {notes.map((n, i) => (
               <p

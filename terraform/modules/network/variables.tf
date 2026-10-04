@@ -1,6 +1,7 @@
 variable "name_prefix" { type = string }
 variable "region" { type = string }
-variable "service_port" {
-  type    = number
-  default = 8000
+variable "web_port" {
+  description = "The Next.js container port — the only one the load balancer reaches."
+  type        = number
+  default     = 3000
 }

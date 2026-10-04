@@ -20,6 +20,11 @@ data set of the project/    # 354 MB of training images
 aws p2 work properly/       # 257 MB, the previous deployment
 data-sourse/                # 28 MB of source photography
 ML/data/                    # rebuilt image dataset
+# Checkpoints that are kept for rollback and for the examiner chapter, not
+# served: the service loads ML/models/soil_model.pth and nothing under these.
+ML/models/legacy_8class/
+ML/models/soil_v2/
+ML/models/soil_v2_4class/
 
 # Runtime state, not build input. Uploaded cards, the vector index and the
 # agent reports belong on the mounted volume, not in the image — baking them in

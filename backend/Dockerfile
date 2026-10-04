@@ -60,12 +60,20 @@ COPY ML/models/ ./ML/models/
 # one volume to mount. Without a volume this still runs — it just forgets the
 # uploaded cards and the research reports on every restart.
 ENV AGROSENSE_DATA_DIR=/data
+
+# Not root. The service needs to write in exactly two places — its data
+# directory and torch's cache under $HOME — and owns both; the code and the
+# models stay read-only to it.
+RUN useradd --system --uid 10001 --create-home --home-dir /home/app app \
+    && mkdir -p /data && chown app:app /data
 VOLUME ["/data"]
+USER app
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
-# One worker on purpose. The background research sweep lives in the process, so
-# a second worker would mean two schedulers researching the same topics and
-# billing the same OpenAI account twice.
+# One worker on purpose. On-demand research runs in this process, so a second
+# worker would mean two copies of every queue researching the same topics and
+# billing Bedrock twice. (On AWS the timed sweep is the Lambda's, not this
+# process's: AGROSENSE_AGENTS_SCHEDULER=0.)
 CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

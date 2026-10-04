@@ -29,7 +29,7 @@ import {
  *
  * Drawn with divs rather than a chart library: these are proportions of a
  * width, there is no trigonometry, and `<ArcGauge>` already proved what
- * server/client float drift does to an SVG (PLAN.md §9).
+ * server/client float drift does to an SVG (research and plan/PLAN.md §9).
  */
 export function NutrientChart({
   readings = SAMPLE_READING,

@@ -10,7 +10,7 @@ import { Logo } from "./Logo";
 
 /**
  * Link columns on paper, then the one dark band — the page's single moment of
- * emphasis, and the last thing you see (PLAN.md §2, §6).
+ * emphasis, and the last thing you see (research and plan/PLAN.md §2, §6).
  */
 export function SiteFooter() {
   const { t, lang } = useLang();

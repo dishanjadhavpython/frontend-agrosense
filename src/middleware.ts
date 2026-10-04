@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse, type NextFetchEvent } from "next/server";
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { THEME_INIT_SCRIPT_HASH } from "@/lib/themeScript";
 
@@ -31,16 +31,37 @@ const isPublic = createRouteMatcher([
   // reaches these — they render from committed editorial content plus the
   // research reports, both of which are the same for everybody.
   "/prediction(.*)",
+  // The examiner walkthrough: a chaptered explanation of how this system is
+  // built, for a project examiner marking it. Every number on those pages comes
+  // from committed modules under `src/data/examiner/`, generated offline from
+  // the training artifacts — no card, no document, no paid API call, and the
+  // same bytes for every visitor. By the rule at the top of this file it meets
+  // neither test for gating.
+  "/examiner(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
   // Read-only, identical for every visitor, and the detail pages fetch it
   // client-side while signed out.
   "/api/insights(.*)",
+  // The 351-taluka list, the atlas and the season vocabulary. Public for the
+  // same three reasons `/api/insights` is: it is read-only, it is identical
+  // for every visitor, and the location step fetches it client-side on mount
+  // — before anyone has been asked to sign in. It costs no paid API call and
+  // carries nobody's document; by the rule stated above it does not meet
+  // either test for gating.
+  //
+  // Note the exact path. `POST /api/recommend` is deliberately NOT public: a
+  // recommendation is the result action, the analogue of `/api/predict`, and
+  // it can carry the farmer's own card readings in its body.
+  "/api/recommend/meta",
+  // The load balancer's health check. It carries no data and costs nothing,
+  // and a check that had to sign in would mark every healthy task dead.
+  "/api/health",
 ]);
 
 const isApi = createRouteMatcher(["/api(.*)"]);
 
-export default clerkMiddleware(
+const clerk = clerkMiddleware(
   async (auth, request) => {
     if (isPublic(request)) return;
 
@@ -103,7 +124,12 @@ export default clerkMiddleware(
         // The one inline script this app writes by hand: the theme
         // initialiser in <head>, which must run before first paint. Allowed
         // by hash rather than nonce — see THEME_INIT_SCRIPT_HASH.
-        "script-src": [THEME_INIT_SCRIPT_HASH],
+        //
+        // Quoted here because Clerk quotes only keywords (`self`, `none`…)
+        // and passes everything else through verbatim. An unquoted
+        // `sha256-…` is not a hash source at all: the browser discards it as
+        // invalid, and the theme script it was meant to allow is blocked.
+        "script-src": [`'${THEME_INIT_SCRIPT_HASH}'`],
         "frame-ancestors": ["'none'"],
         "base-uri": ["'self'"],
         "object-src": ["'none'"],
@@ -112,6 +138,27 @@ export default clerkMiddleware(
     },
   },
 );
+
+/**
+ * Behind CloudFront, tell Clerk the viewer's real protocol.
+ *
+ * The hop from CloudFront to the load balancer is plain HTTP, so the load
+ * balancer stamps every request `X-Forwarded-Proto: http`, and Clerk builds its
+ * sign-in and handshake redirects from that header — `http://` links on an
+ * HTTPS-only site. CloudFront adds `CloudFront-Forwarded-Proto` with what the
+ * viewer actually used (terraform/modules/edge). Trusting it is safe here: the
+ * load balancer forwards nothing that did not come through CloudFront carrying
+ * the origin secret. Locally neither header is present and nothing changes.
+ */
+export default function middleware(request: NextRequest, event: NextFetchEvent) {
+  const viewerProto = request.headers.get("cloudfront-forwarded-proto");
+  if (viewerProto && viewerProto !== request.headers.get("x-forwarded-proto")) {
+    const headers = new Headers(request.headers);
+    headers.set("x-forwarded-proto", viewerProto);
+    return clerk(new NextRequest(request, { headers }), event);
+  }
+  return clerk(request, event);
+}
 
 export const config = {
   matcher: [

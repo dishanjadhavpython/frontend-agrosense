@@ -1,13 +1,13 @@
 /**
- * The 9 soil types the classifier distinguishes.
+ * The soil types the product has a card for.
  *
- * `key` is the model's own label lowercased, and `img` is `soils/<key>.jpg`,
- * so a prediction maps straight to a card.
+ * `key` is the classifier's own label, and `img` is `soils/<key>.jpg`, so a
+ * prediction maps straight to a card.
  *
- * Sources: five classes come from the ResNet50 soil classifier
- * (`final_models/metadata.json` — black, cinder, laterite, peat, yellow), and
- * three more from the second image set (alluvial, clay, red). Sandy has no
- * image yet and falls back to the placeholder.
+ * Eight of the nine are the classes the photo classifier returns
+ * (`ML/models/soil_classes.json`: alluvial, black, cinder, clay, laterite,
+ * peat, red, yellow). Sandy is not one of them — it has a card for the detail
+ * pages but no class, and no image yet, so it falls back to the placeholder.
  *
  * `retention` is water-holding capacity — textbook soil physics, not a model
  * output. It reuses the same three-step language as the nutrient readings, so

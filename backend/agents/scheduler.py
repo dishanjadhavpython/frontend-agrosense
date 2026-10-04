@@ -7,6 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from ..config import (
     AGENTS_ENABLED,
+    AGENTS_IN_PROCESS_SWEEP,
     AGENTS_INTERVAL_HOURS,
     AGENTS_RUN_ON_STARTUP_IF_STALE,
     AGENTS_SWEEP_MINUTES,
@@ -55,13 +56,16 @@ def start_scheduler() -> BackgroundScheduler | None:
     eight hours". It gets picked up at the next sweep instead.
 
     No-op if AGROSENSE_AGENTS_ENABLED resolves to false — the default when no
-    OPENAI_API_KEY is configured."""
+    model credentials are configured."""
     global _scheduler
 
     if not AGENTS_ENABLED:
-        logger.info("AI agent pipeline is disabled (no OPENAI_API_KEY or AGROSENSE_AGENTS_ENABLED=0).")
+        logger.info("AI agent pipeline is disabled (no model credentials or AGROSENSE_AGENTS_ENABLED=0).")
         return None
 
+    if not AGENTS_IN_PROCESS_SWEEP:
+        logger.info("Timed research sweep runs outside this process (EventBridge -> Lambda).")
+        return None
     if _scheduler is not None:
         return _scheduler
 

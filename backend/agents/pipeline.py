@@ -8,9 +8,10 @@ from typing import Any
 
 from agents import Agent, Runner
 
-from ..config import AGENTS_BATCH_SIZE, AGENTS_MODEL, OPENAI_API_KEY
+from ..config import AGENTS_BATCH_SIZE, LLM_CONFIGURED, LLM_PROVIDER
 from . import demand, storage
 from .creator import create_report
+from .model_provider import AGENT_MODEL_NAME, agent_model
 from .planner import plan_batch
 from .research import research_topic
 from .reviewer import review_report, strip_unsourced_claims
@@ -31,7 +32,7 @@ async def _revise_report(topic: Topic, report: TopicReport, review: ReviewResult
     agent = Agent(
         name="Creator Agent (revision)",
         instructions=_REVISION_INSTRUCTIONS,
-        model=AGENTS_MODEL,
+        model=agent_model(),
         output_type=TopicReport,
     )
     prompt = (
@@ -71,7 +72,7 @@ async def process_topic(topic: Topic, research_focus: str | None) -> dict[str, A
         # Removals are recorded rather than silent, so a blank schemes section
         # can be explained instead of just looking like nothing was found.
         payload["reviewer_concerns"] = list(review.concerns) + stripped
-        payload["model"] = AGENTS_MODEL
+        payload["model"] = AGENT_MODEL_NAME
         storage.save_report(topic, payload)
 
         return {
@@ -94,12 +95,16 @@ async def process_topic(topic: Topic, research_focus: str | None) -> dict[str, A
 async def run_pipeline_async(batch_size: int | None = None) -> dict[str, Any]:
     started_at = datetime.now(timezone.utc).isoformat()
 
-    if not OPENAI_API_KEY:
+    if not LLM_CONFIGURED:
         result = {
             "started_at": started_at,
             "finished_at": started_at,
             "status": "skipped",
-            "reason": "OPENAI_API_KEY is not configured.",
+            "reason": (
+                "No AWS credentials for Bedrock."
+                if LLM_PROVIDER == "bedrock"
+                else "OPENAI_API_KEY is not configured."
+            ),
             "topics": [],
         }
         storage.save_run_status(result)

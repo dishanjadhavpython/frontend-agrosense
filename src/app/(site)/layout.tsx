@@ -1,11 +1,13 @@
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { SiteFooter } from "@/components/site/SiteFooter";
 import { CardProvider } from "@/lib/cardState";
+import { ChatAssistant } from "@/components/site/ChatAssistant";
+import { ViewSwitch } from "@/components/examiner/ViewSwitch";
 
 /**
  * Public chrome. Nested under the root layout rather than being a second root
  * layout — two roots would force a full page reload on every crossing into the
- * app, and sign-in crosses constantly (PLAN.md §9).
+ * app, and sign-in crosses constantly (research and plan/PLAN.md §9).
  */
 export default function SiteLayout({ children }: LayoutProps<"/">) {
   return (
@@ -26,8 +28,14 @@ export default function SiteLayout({ children }: LayoutProps<"/">) {
         <main id="main" className="flex-1">
           {children}
         </main>
+        {/* Inside the provider on purpose: the assistant answers about the
+            card this page has read, so it has to see the same card. */}
+        <ChatAssistant />
       </CardProvider>
       <SiteFooter />
+      {/* The way across to the examiner walkthrough. The only thing this
+          section knows about it. */}
+      <ViewSwitch />
     </>
   );
 }

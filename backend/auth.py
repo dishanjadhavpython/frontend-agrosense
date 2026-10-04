@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import Header, HTTPException, Request
 
-from .config import CLERK_ENABLED, CLERK_SECRET_KEY
+from .config import CLERK_AUTHORIZED_PARTIES, CLERK_ENABLED, CLERK_SECRET_KEY
 
 logger = logging.getLogger("agrosense.auth")
 
@@ -72,7 +72,10 @@ def resolve_user(request: Request) -> dict[str, Any] | None:
 
         state = client.authenticate_request(
             request,
-            AuthenticateRequestOptions(secret_key=CLERK_SECRET_KEY),
+            AuthenticateRequestOptions(
+                secret_key=CLERK_SECRET_KEY,
+                authorized_parties=CLERK_AUTHORIZED_PARTIES or None,
+            ),
         )
     except Exception as exc:
         # A malformed or expired token is a 401, not a 500, and the reason is

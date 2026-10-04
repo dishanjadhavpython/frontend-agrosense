@@ -8,8 +8,9 @@ from agents import Agent, Runner
 from agents.mcp import MCPServerStdio
 from agents.run_error_handlers import RunErrorHandlerInput
 
-from ..config import AGENTS_MODEL, ROOT_DIR
+from ..config import ROOT_DIR
 from .briefs import brief_for, kind_of
+from .model_provider import agent_model
 from .context import dated_context
 from .schemas import ResearchFindings
 from .sources import SEARCH_HINT
@@ -136,7 +137,7 @@ async def _write_up_what_we_have(
     agent = Agent(
         name="Research Agent (write-up)",
         instructions=f"{dated_context()}\n\n{_WRITE_UP_INSTRUCTIONS}",
-        model=AGENTS_MODEL,
+        model=agent_model(),
         output_type=ResearchFindings,
     )
     result = await Runner.run(
@@ -166,7 +167,7 @@ async def research_topic(topic: Topic, research_focus: str | None = None) -> Res
             # this pipeline gets the same block, so none of them can drift
             # into writing for a different country or a different calendar.
             instructions=f"{dated_context()}\n\n{RESEARCH_INSTRUCTIONS}\n\n{SEARCH_HINT}",
-            model=AGENTS_MODEL,
+            model=agent_model(),
             mcp_servers=servers,
             output_type=ResearchFindings,
         )

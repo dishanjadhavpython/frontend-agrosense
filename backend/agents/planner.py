@@ -5,7 +5,7 @@ from datetime import date
 from agents import Agent, Runner
 from pydantic import BaseModel, Field
 
-from ..config import AGENTS_MODEL
+from .model_provider import agent_model
 from .context import dated_context
 from .topics import Topic
 
@@ -62,7 +62,7 @@ async def plan_batch(topics: list[Topic]) -> dict[tuple[str, str], str]:
         agent = Agent(
             name="Planner Agent",
             instructions=f"{dated_context()}\n\n{PLANNER_INSTRUCTIONS}",
-            model=AGENTS_MODEL,
+            model=agent_model(),
             output_type=ResearchPlan,
         )
         result = await Runner.run(agent, _build_prompt(topics), max_turns=4)

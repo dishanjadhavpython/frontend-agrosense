@@ -51,6 +51,51 @@ const nextConfig: NextConfig = {
   // version number for somebody scanning.
   poweredByHeader: false,
 
+  // A self-contained server in `.next/standalone` — what `Dockerfile.web`
+  // ships to ECS Fargate. It carries only the node_modules the server actually
+  // imports, so the image is a few hundred MB instead of the whole tree.
+  output: "standalone",
+
+  /**
+   * Development only, and it fixes a specific dead page.
+   *
+   * On a first visit with no Clerk dev-browser cookie, Clerk bounces the
+   * browser through `<instance>.clerk.accounts.dev/v1/client/handshake` and
+   * back. Chromium then attaches `Origin: https://<instance>.clerk.accounts.dev`
+   * to the module scripts the returned page requests, and Next's dev server
+   * refuses a cross-origin asset request with a bodiless 403.
+   *
+   * Seven chunks died that way — `@clerk/nextjs` and this app's own `src/lib`
+   * among them — so React never hydrated and every client component on the
+   * page was inert: no theme toggle, no language switch, no taluka list. The
+   * page looked completely fine, because the server-rendered HTML is fine. It
+   * is only the JavaScript that never arrives.
+   *
+   *   curl -o /dev/null -w '%{http_code}' \
+   *     -H 'Origin: https://<instance>.clerk.accounts.dev' \
+   *     http://127.0.0.1:3000/_next/static/chunks/<any>.js     # -> 403
+   *
+   * Production is unaffected: there is no handshake redirect on a configured
+   * production instance, and this option is read only by `next dev`.
+   *
+   * ⚠ The exact hostname is what works. `"*.clerk.accounts.dev"` alone was
+   * tried first and the chunks still came back 403 — the wildcard is not
+   * honoured here. It is kept below only as documentation of intent.
+   *
+   * That makes this line instance-specific: the subdomain is *this* Clerk
+   * development instance. A teammate with their own instance, or a rotated
+   * key, gets a different one and will see the same dead page — no theme
+   * toggle, no language switch, no taluka list — with no error to go on. The
+   * fix is to read their own handshake URL out of the browser's network tab
+   * and add it here.
+   */
+  allowedDevOrigins: [
+    "stirred-lark-72.clerk.accounts.dev",
+    "*.clerk.accounts.dev", // does not match; see above
+    "127.0.0.1",
+    "localhost",
+  ],
+
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

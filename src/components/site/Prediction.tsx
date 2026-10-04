@@ -24,7 +24,11 @@ import { Section } from "@/components/ui/Section";
 import { Reveal } from "@/components/ui/Reveal";
 import { Deck } from "@/components/ui/Deck";
 import { useCard } from "@/lib/cardState";
-import { fromApi } from "@/data/predictionFromApi";
+import { RecommendationBoard } from "./recommend/RecommendationBoard";
+import { SoilAgreement } from "./recommend/SoilAgreement";
+import { fromApi, type LivePrediction } from "@/data/predictionFromApi";
+import { title } from "@/lib/format";
+import { isUnsureSoilRead, unsureSoilReadNote } from "@/lib/soilConfidence";
 
 /**
  * The three models, on one board.
@@ -43,7 +47,7 @@ import { fromApi } from "@/data/predictionFromApi";
 export function Prediction() {
   const { lang } = useLang();
   const mr = lang === "mr";
-  const { prediction } = useCard();
+  const { prediction, recommendation, soil: soilRead } = useCard();
 
   // A real prediction replaces the worked example outright. Where the models
   // returned something the site has no card for, the row is simply shorter —
@@ -90,7 +94,7 @@ export function Prediction() {
           role="status"
           className={cn(
             "rounded-[var(--radius-card)] border px-4 py-3 text-[14px] leading-relaxed",
-            live
+            live || recommendation
               ? "border-leaf/40 bg-leaf-wash text-leaf-deep"
               : "border-haldi/50 bg-haldi-wash text-haldi-ink",
           )}
@@ -123,6 +127,19 @@ export function Prediction() {
                 </span>
               ) : null}
             </>
+          ) : recommendation ? (
+            // The live path today is the district engine, not `/api/predict`,
+            // so a recommendation must clear the "sample" banner too. Keyed on
+            // `prediction` alone, this said "worked example" directly above
+            // the farmer's own board — exactly the confusion it exists to stop.
+            <>
+              <strong className="font-semibold">
+                {mr ? "तुमच्या शेतासाठी. " : "For your field. "}
+              </strong>
+              {mr
+                ? `पत्रिकेवरचे आकडे${soilRead ? ", मातीचा फोटो" : ""} आणि ${title(recommendation.taluka)} तालुक्याचं हवामान व मृदा सर्वेक्षण वापरून — ${recommendation.season} हंगामासाठी.`
+                : `From your card's readings${soilRead ? ", your soil photo" : ""} and ${title(recommendation.taluka)} taluka's own climate and soil survey, for ${recommendation.season}.`}
+            </>
           ) : (
             <>
               <strong className="font-semibold">
@@ -139,7 +156,10 @@ export function Prediction() {
       {/* Soil, then crops, then fertilizer — the order the product works in,
           and now three decks in one visual language rather than a panel
           followed by two carousels. */}
-      {soil ? (
+      {/* The worked-example soil card yields to a real classification for
+          the same reason the crop decks yield to the board: two answers to
+          one question, one of them invented. */}
+      {soil && !soilRead ? (
         <DeckBlock
           icon={<Layers className="size-[18px]" strokeWidth={1.9} aria-hidden />}
           title={mr ? "ओळखलेली माती" : "Soil, classified"}
@@ -191,6 +211,38 @@ export function Prediction() {
         </DeckBlock>
       ) : null}
 
+      {/* ---- The recommendation engine's answer. ----------------------
+          When one exists it replaces the two decks below outright rather
+          than sitting beside them. Those decks are the old crop/fertilizer
+          models, which the engine supersedes: it ranks against the taluka's
+          own agro-climatology instead of four typed field conditions, and it
+          returns a dose in kg/ha instead of a bag with a confidence score.
+          Showing both would be showing two answers to one question.
+
+          The soil card above stays — that is the photograph classifier,
+          which the engine has no equivalent for and does not replace. */}
+      {/* The photograph's answer, checked against the survey. Above the
+          board because it is about the ground itself, and the board is about
+          what to do with it — but deliberately not *inside* the board, since
+          it is not part of the recommendation and must not read as an input
+          to it. Shown whenever a photo has been classified, with or without
+          a recommendation to compare against. */}
+      {soilRead ? (
+        <Reveal className="mt-8">
+          <SoilAgreement
+            soil={soilRead}
+            context={recommendation?.context ?? null}
+            mr={mr}
+          />
+        </Reveal>
+      ) : null}
+
+      {recommendation ? (
+        <Reveal className="mt-10">
+          <RecommendationBoard recommendation={recommendation} mr={mr} />
+        </Reveal>
+      ) : (
+        <>
       <DeckBlock
         icon={<Sprout className="size-[18px]" strokeWidth={1.9} aria-hidden />}
         title={mr ? "शिफारस केलेली पिकं" : "Crops we'd plant"}
@@ -265,10 +317,12 @@ export function Prediction() {
             decks read as two different answers at a glance in the dark. */}
         <Deck label={mr ? "खतांचा सल्ला" : "Fertilizer plan"} glow="haldi">
           {fertilizers.map((p) => (
-            <FertPallet key={p.key} pick={p} />
+            <FertPallet key={p.key} pick={p} live={live} />
           ))}
         </Deck>
       </DeckBlock>
+        </>
+      )}
     </Section>
   );
 }
@@ -356,14 +410,18 @@ function SoilPallet({
 
       <PalletFoot lead={mr ? soil.mr : soil.en} sub={mr ? soil.en : soil.mr} />
 
-      {/* The second guess, kept on the card. A classifier trained on 28 real
-          photographs of some of these soils is not entitled to state one
-          answer and stop talking. */}
+      {/* The second guess, kept on the card. A classifier right about three
+          times in four is not entitled to state one answer and stop talking. */}
       {runnerUpSoil ? (
         <p className="mt-1.5 text-[12px] text-mist">
           {mr ? "किंवा " : "or "}
           {mr ? runnerUpSoil.mr : runnerUpSoil.en}
           <span className="tnum"> {runnerUp.score}%</span>
+        </p>
+      ) : null}
+      {isUnsureSoilRead(pick.score) ? (
+        <p className="mt-1.5 text-[12px] font-semibold text-haldi">
+          {mr ? unsureSoilReadNote.mr : unsureSoilReadNote.en}
         </p>
       ) : null}
     </Pallet>
@@ -491,26 +549,31 @@ function CropPallet({ pick }: { pick: { key: string; score: number } }) {
 
 /**
  * `pick` carries only what a model can produce — a key, a score and a verdict.
- * The dose and the crop list are editorial, written by hand in
- * `prediction.ts`, and are looked up rather than required: a live prediction
- * for a bag nobody has written copy for should still render as a card, just
- * without the sentence underneath.
+ *
+ * The dose and the crop list in `prediction.ts` are editorial, written by hand
+ * for the worked example's own field, so they are shown only on the worked
+ * example. On a live prediction they would be another field's numbers on this
+ * farmer's card: the example's "25 kg/acre — half the usual" is a judgement
+ * about a soil reading 628 kg/ha of nitrogen, and no model computed it here.
+ * A live card names the crop the fertilizer model was actually run for.
  */
 function FertPallet({
   pick,
+  live,
 }: {
   pick: { key: string; score: number; verdict: FertVerdict };
+  live: LivePrediction | null;
 }) {
   const { lang } = useLang();
   const mr = lang === "mr";
   const fert = FERTILIZERS.find((f) => f.key === pick.key);
   if (!fert) return null;
 
-  const editorial = findFertPrediction(pick.key);
+  const editorial = live ? undefined : findFertPrediction(pick.key);
   const verdict = verdictLabel[pick.verdict];
   // Which of your crops this bag is for — the crop→fertilizer link, kept
   // visible now that the two decks scroll independently of each other.
-  const forCrops = (editorial?.crops ?? [])
+  const forCrops = (live ? (live.fertilizersFor ? [live.fertilizersFor] : []) : (editorial?.crops ?? []))
     .map((k) => CROPS.find((c) => c.key === k))
     .filter((c): c is NonNullable<typeof c> => Boolean(c))
     .map((c) => (mr ? c.mr : c.en))

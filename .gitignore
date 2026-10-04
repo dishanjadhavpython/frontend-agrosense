@@ -62,3 +62,27 @@ data set of the project/
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+# Local virtualenv — about 1.2 GB.
+.venv/
+
+# JetBrains IDE settings: editor state, not project code.
+.idea/
+
+# Terraform: providers, local state, saved plans, and the account-specific
+# backend file (CI passes the same values from repository variables). The
+# provider lock files are committed.
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+terraform/backend.hcl
+
+# Kept on this machine, deliberately outside the repository (see bad.md):
+# the archive, the scraper output, and the original photographs whose
+# processed copies are in public/img.
+no_now/
+scrape data imp/
+images/
+/Screenshot*.png
+/PHOTO-*.jpg

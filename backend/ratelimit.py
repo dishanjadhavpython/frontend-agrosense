@@ -44,6 +44,10 @@ LIMITS: dict[str, int] = {
     "predict": 20,
     "card": 20,
     "ask": 50,
+    # A conversation is several turns, so this is set per message: enough for a
+    # farmer's real questions across a day, not enough to farm out as a free
+    # model endpoint.
+    "chat": 80,
 }
 
 WINDOW_SECONDS = 24 * 60 * 60

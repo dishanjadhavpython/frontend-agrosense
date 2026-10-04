@@ -100,7 +100,7 @@ class DocumentService:
         # turns "low, apply urea" into "high, apply none". Nothing downstream
         # can detect that from the text, so every OCR-derived reading is
         # stamped unconfirmed and the UI asks the farmer to check it against
-        # the paper. See BACKEND_PLAN.md §9.
+        # the paper. See research and plan/BACKEND_PLAN.md §9.
         confidence = "unconfirmed" if document.used_ocr else "high"
         for metric in metrics:
             metric["confidence"] = confidence

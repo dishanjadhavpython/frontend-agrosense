@@ -21,6 +21,11 @@ on the timer cannot differ from one researched on demand.
 """
 
 
+# Optional tool keys (YouTube, data.gov.in) are read from Secrets Manager when
+# `backend.config` is first imported — inside `run_pipeline_sync` below — so
+# this entrypoint and the Fargate service share one loader.
+
+
 def handler(event: dict[str, Any] | None = None, context: Any = None) -> dict[str, Any]:
     # Imported inside the handler, not at module scope. A Lambda that fails to
     # import shows up as an opaque `Runtime.ImportModuleError` with no

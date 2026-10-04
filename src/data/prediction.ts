@@ -5,7 +5,7 @@
  * recommender ranks what to plant in it, and the fertilizer recommender says
  * what to feed them. None of the three is wired to an endpoint yet, so this is
  * a fixture — and every surface that renders it carries the standing
- * sample-figures notice. That is not decoration (PLAN.md §6): a farmer who
+ * sample-figures notice. That is not decoration (research and plan/PLAN.md §6): a farmer who
  * mistakes a demonstration for their own result buys fertilizer against it.
  *
  * The fixture is deliberately consistent with the card in `cardReading.ts`
@@ -21,7 +21,7 @@
  * Keys join to CROPS / SOILS / FERTILIZERS. Names, photographs, categories and
  * NPK grades are looked up there and never copied here.
  *
- * MARATHI NEEDS REVIEW. Drafted, not authored by a native speaker — PLAN.md §10
+ * MARATHI NEEDS REVIEW. Drafted, not authored by a native speaker — research and plan/PLAN.md §10
  * asks for exactly this flag rather than a silent guess.
  */
 

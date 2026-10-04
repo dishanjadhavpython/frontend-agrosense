@@ -8,6 +8,7 @@ import { fertilizerTopicSlug } from "@/data/topics";
 import { FertVisuals } from "./FertVisuals";
 import { Insights } from "./Insights";
 import { LiveFertBand } from "./LiveBand";
+import { useHasPrediction, useLiveFert } from "@/lib/livePick";
 import { Badge, DetailPage } from "./DetailPage";
 
 /**
@@ -22,11 +23,14 @@ import { Badge, DetailPage } from "./DetailPage";
 export function FertDetail({ fertKey }: { fertKey: string }) {
   const { lang } = useLang();
   const mr = lang === "mr";
+  const hasPrediction = useHasPrediction();
+  const isLive = useLiveFert(fertKey) !== null;
   const fert = FERTILIZERS.find((f) => f.key === fertKey);
   if (!fert) return null;
 
   const bias = biasLabel[fert.bias];
-  const pick = findFertPrediction(fertKey);
+  // Example copy only without a prediction, and labelled — see SoilDetail.
+  const pick = hasPrediction ? undefined : findFertPrediction(fertKey);
 
   return (
     <DetailPage
@@ -39,6 +43,8 @@ export function FertDetail({ fertKey }: { fertKey: string }) {
         <Badge className={biasTint[fert.bias]}>{mr ? bias.mr : bias.en}</Badge>
       }
       live={<LiveFertBand fertKey={fertKey} />}
+      isLive={isLive}
+      example={pick !== undefined}
       visuals={<FertVisuals fertKey={fertKey} />}
       why={pick?.why}
       facts={pick?.facts}

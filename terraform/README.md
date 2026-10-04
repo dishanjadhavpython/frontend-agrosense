@@ -1,181 +1,193 @@
 # AgroSense on AWS
 
 ```
-                        CloudFront  +  WAF
-                              │
-       ┌──────────────────────┼──────────────────────┐
-       │                      │                      │
- /_next/static/*       everything else          /api/py/*
-       │                      │                      │
-      S3            Lambda (Next, OpenNext)   ALB → Fargate (ARM64)
-                                                     │  torch, tesseract
-                                      S3 · DynamoDB · Secrets Manager
-                                                     ▲
-                          EventBridge (30 min) → Lambda (research sweep)
+farmer's phone ──HTTPS──► CloudFront + WAF ──HTTP + origin header──► ALB
+                                                                    │ (refuses anything without it)
+                                                                    ▼
+                                                     web   Next.js on Fargate (ARM64)
+                                                      │  Service Connect — private, no public route
+                                      ┌───────────────┴───────────────┐
+                                      ▼                               ▼
+                       api  reading service (FastAPI)      engine  taluka × season engine
+                        │   OCR · soil CNN · crop & fertilizer models · chat · document Q&A
+                        ├──► Amazon Bedrock — Nova Pro (APAC profile) + Guardrail
+                        └──► DynamoDB (reports, rate limits) · S3 (uploads)
+EventBridge (30 min) ──► Lambda research sweep ──► Bedrock · DynamoDB
+KMS · CloudTrail · GuardDuty · IAM Access Analyzer   (+ Security Hub, Inspector — opt-in)
 ```
 
-Two shapes of compute, picked for two different reasons rather than for
-consistency:
+Everything runs in **ap-south-1 (Mumbai)**, next to the farmers and the
+Agmarknet data. CloudFront and its WAF are global and live in us-east-1, which
+is an AWS requirement, not a choice.
 
-- **The reading service is always warm.** It loads torch and tesseract. On
-  Lambda that is a 30–60 second cold start on the first prediction after any
-  quiet period — on exactly the request a farmer is standing there waiting for.
-  Fargate costs ~$20/month and removes the problem instead of mitigating it.
-- **The research sweep scales to zero.** It runs every 30 minutes, idles most
-  of the day, and nobody waits on it. That is the shape Lambda is for.
+## Why this shape
 
-On-demand research — the runs that start the moment somebody hits Predict —
-happens in-process on the Fargate task, not in the Lambda. It has to begin
-inside the request and report progress back through `/api/insights/…`. See
-`backend/agents/queue.py`.
+- **Three always-warm services, one Lambda.** A farmer waits on the web app,
+  the reading service and the engine, and the reading service loads torch — a
+  30–60 s cold start on exactly the request someone is standing there for. The
+  research sweep is the opposite: nobody waits on it and it idles most of the
+  day, so it scales to zero.
+- **Only the web app is public.** The browser never calls the reading service
+  or the engine; the Next.js server does. So those two have no load balancer,
+  no listener and no route from the internet at all — they answer the web app
+  over ECS Service Connect (`http://api:8000`, `http://engine:8001`).
+- **No model keys.** Every model call goes to Amazon Bedrock with the calling
+  task's or function's IAM role. There is no third-party API key to leak or
+  rotate.
+- **One place for research state.** The sweep Lambda and the reading service
+  share one DynamoDB table (`backend/agents/kv.py`). A report the Lambda writes
+  is the report the farmer's page reads.
 
----
+## Security controls
+
+| Layer | Control |
+|---|---|
+| Edge | CloudFront TLS; WAF: IP reputation, AWS common rules, known-bad inputs, per-IP rate limits on the site, on `/api/*` and on `/api/chat`; bot control opt-in; WAF logs with cookies and `Authorization` redacted |
+| Origin | ALB admits only CloudFront's managed prefix list **and** only requests carrying the `X-AgroSense-Origin` secret; everything else gets 403 |
+| Network | API and engine reachable only from the web app's security group; no public route |
+| Identity | Clerk session verified in the web app and again in the API; per-user daily quotas (`backend/ratelimit.py`) |
+| IAM | One task role per service: web and engine have **no** AWS permissions; the API may call Bedrock (Nova Pro + guardrail only), its DynamoDB tables and the uploads prefix |
+| Secrets | Secrets Manager, encrypted with a customer-managed KMS key; required ones injected by ECS, optional ones read at boot; never in Terraform state |
+| Data | S3 uploads: public access blocked, encrypted, versioned, TLS-only, 90-day expiry; DynamoDB encrypted at rest |
+| AI | Bedrock Guardrail on the chat: content filters, prompt-attack detection, credential blocking, Aadhaar masking |
+| Audit | CloudTrail, all regions, KMS-encrypted, log-file validation |
+| Detection | GuardDuty (S3 data events, Lambda network activity; ECS runtime monitoring opt-in); IAM Access Analyzer; Security Hub and Inspector opt-in |
+| Containers | Non-root users, all Linux capabilities dropped, scan on push, deployment circuit breaker with rollback |
 
 ## What it costs
 
-At low traffic, per month:
+At low traffic, per month, ap-south-1, ARM64:
 
-| | |
+| Item | Approx. |
 |---|---|
-| ALB | $16 |
-| Fargate, 0.5 vCPU / 3 GB, always on (ARM) | ~$20 |
-| WAF — web ACL + 4 rules | ~$10 |
-| CloudFront, Lambda, S3, DynamoDB, Secrets | ~$5 |
-| **total** | **~$50** |
+| Fargate — web 0.5 vCPU / 1 GB | ~$12 |
+| Fargate — api 0.5 vCPU / 3 GB (dev) | ~$16 |
+| Fargate — engine 1 vCPU / 4 GB | ~$27 |
+| ALB | ~$18 |
+| WAF — web ACL + 6 rules | ~$12 |
+| CloudFront, Lambda, DynamoDB, S3, Secrets Manager, KMS, CloudTrail, GuardDuty | ~$10 |
+| Bedrock Nova Pro | per use — ~$0.06 per researched topic, ~$0.002 per chat message |
+| **total (dev)** | **~$95 + Bedrock** |
 
-Two deliberate savings, both worth knowing about before you change anything:
+`envs/prod.tfvars` doubles the web tasks and turns on bot control, GuardDuty
+runtime monitoring, Security Hub and Inspector — roughly $150–200 plus Bedrock.
+The budget alert defaults to $150 (dev) and $250 (prod).
 
-- **No NAT Gateway** — $32/month avoided. The Fargate task sits in a *public*
-  subnet with a public IP, and its security group admits traffic from the load
-  balancer's security group and nothing else. A private subnet plus NAT would
-  add a second, redundant control at the price of the largest line in the
-  stack. The task genuinely needs outbound internet (ECR, OpenAI, data.gov.in,
-  the search backends), which is exactly what the NAT would have been for.
-- **`PriceClass_200`** — no edge locations in South America or Australia. The
-  audience is Maharashtra.
-
-`waf_bot_control` is off by default. It is about $10/month plus per-request
-charges — the biggest optional line here, and turning it on silently would be
-a cost surprise. `envs/prod.tfvars` enables it.
-
-The ALB is the line most worth questioning later: CloudFront can reach a
-Fargate task directly with a shared origin secret and save the $16, at the cost
-of a stable DNS name and health checks. Not in v1.
-
----
+No NAT Gateway: the tasks sit in public subnets with public IPs, and the
+security groups — not the subnet — keep inbound traffic out.
 
 ## Deploying
 
-### 0. Once per account
+Deployment is a GitHub Actions pipeline. Pushing to `main` deploys.
 
-```bash
-cd terraform
-terraform init
+```
+.github/workflows/ci.yml       every push and pull request — no AWS access
+  web        eslint · tsc · CSP-hash and ontology checks · next build
+  terraform  fmt · validate (main and bootstrap)
+
+.github/workflows/deploy.yml   push to main, or run by hand
+  test       reading-service tests (fetches the trained models)
+  prepare    the four ECR repositories (a no-op after the first run)
+  build      api · agents · web · engine — ARM64, on GitHub's ARM runners,
+             tagged with the commit SHA; the engine fits its pipeline into
+             the image and answers one recommendation before it is pushed
+  deploy     terraform plan → apply with those tags, wait for ECS to settle,
+             smoke-test the site, the engine path and the 403 at the origin
 ```
 
-### 1. First apply
+No AWS key is stored in GitHub: each job exchanges GitHub's OIDC token for
+the `agrosense-github-deploy` role, which trusts only this repository's `dev`
+environment. The engine is its own repository, linked as a git submodule.
 
-`next_origin_domain` has no correct default — it is the OpenNext function URL,
-which does not exist yet. Pass a placeholder:
+### Once per account (already done for this account)
 
-```bash
-terraform apply -var-file=envs/dev.tfvars -var next_origin_domain=example.com
-```
+1. **Bedrock** — Amazon Nova Pro must be invocable in ap-south-1.
+2. **Bootstrap** — the state bucket, the private build-inputs bucket and the
+   GitHub OIDC role:
 
-### 2. Put the secrets in
+   ```bash
+   cd terraform/bootstrap
+   printf 'terraform {\n  backend "local" {}\n}\n' > backend_override.tf
+   terraform init && terraform apply
+   rm backend_override.tf
+   terraform init -migrate-state -backend-config="bucket=$(terraform output -raw tfstate_bucket)" \
+     -backend-config="key=bootstrap/terraform.tfstate" -backend-config="region=ap-south-1" \
+     -backend-config="use_lockfile=true" -backend-config="encrypt=true"
+   ```
 
-Terraform creates the secrets empty and never holds their values — anything
-passed as a resource argument is stored in plaintext in state.
+3. **Build inputs** — what a public repository must not carry:
 
-```bash
-terraform output -json secret_arns | jq -r 'to_entries[] | "\(.key)\t\(.value)"'
+   ```bash
+   B=s3://$(terraform -chdir=terraform/bootstrap output -raw build_inputs_bucket)
+   aws s3 sync ML/models "$B/ML/models" --exclude "legacy_8class/*" --exclude "soil_v2/*" --exclude "soil_v2_4class/*"
+   aws s3 sync "ml engine for Recommendation/data" "$B/engine/data" --exclude "raw/_rejected/*" --exclude "*.md"
+   aws s3 sync "ml engine for Recommendation/artifacts" "$B/engine/artifacts" --exclude "pipeline_*.joblib"
+   ```
 
-aws secretsmanager put-secret-value \
-  --secret-id agrosense-dev/openai-api-key   --secret-string 'sk-...'
-aws secretsmanager put-secret-value \
-  --secret-id agrosense-dev/clerk-secret-key --secret-string 'sk_live_...'
-aws secretsmanager put-secret-value \
-  --secret-id agrosense-dev/agrosense-api-key \
-  --secret-string "$(openssl rand -hex 32)"
-```
+   Re-run these after retraining a model or refreshing the engine's data.
 
-### 3. Build and push the reading service
+4. **Secrets** — created by Terraform, filled once by hand:
 
-**ARM64.** The task definition pins `cpu_architecture = "ARM64"` — Graviton is
-~20% cheaper and torch ships ARM wheels. An amd64 image fails at boot with an
-exec format error, which reads as a crash loop rather than as a build mistake.
+   ```bash
+   cd terraform
+   terraform init -backend-config=backend.hcl        # backend.hcl is git-ignored
+   terraform apply -var-file=envs/dev.tfvars -var clerk_publishable_key=pk_… \
+     -target='module.platform.aws_secretsmanager_secret.app'
+   aws secretsmanager put-secret-value --secret-id agrosense-dev/clerk-secret-key   --secret-string 'sk_…'
+   aws secretsmanager put-secret-value --secret-id agrosense-dev/agrosense-api-key  --secret-string "$(openssl rand -hex 32)"
+   # optional — each tool runs keyless without one
+   aws secretsmanager put-secret-value --secret-id agrosense-dev/youtube-api-key     --secret-string '…'
+   aws secretsmanager put-secret-value --secret-id agrosense-dev/data-gov-in-api-key --secret-string '…'
+   ```
 
-On an Apple Silicon Mac this is the native build. On an Intel machine or in CI,
-name the platform:
+5. **GitHub** — an environment named `dev`, and four repository variables:
+   `AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET`, `BUILD_INPUTS_BUCKET` (the
+   bootstrap outputs) and `CLERK_PUBLISHABLE_KEY`. Approval rules can be added
+   to the `dev` environment in the repository settings.
 
-```bash
-REPO=$(terraform output -raw backend_ecr_repository)
-aws ecr get-login-password --region ap-south-1 \
-  | docker login --username AWS --password-stdin "${REPO%%/*}"
-
-cd ..
-docker build --platform linux/arm64 -f backend/Dockerfile -t "$REPO:latest" .
-docker push "$REPO:latest"
-
-aws ecs update-service --cluster "$(terraform -chdir=terraform output -raw ecs_cluster)" \
-  --service "$(terraform -chdir=terraform output -raw ecs_service)" \
-  --force-new-deployment
-```
-
-First boot takes ~60s — that is torch loading, and the ALB health check has a
-180s grace period for it.
-
-### 4. Build and push the research sweep
-
-Same repository layout, different image and entrypoint (`backend.agents.pipeline`).
+### Every deploy
 
 ```bash
-REPO=$(terraform output -raw agents_ecr_repository)
-docker build --platform linux/arm64 -f backend/Dockerfile.agents -t "$REPO:latest" .
-docker push "$REPO:latest"
-aws lambda update-function-code --function-name agrosense-dev-agents --image-uri "$REPO:latest"
+git push origin main          # then watch: gh run watch
 ```
 
-### 5. The Next.js half
+### Clerk
 
-OpenNext builds the Lambda bundle and the static assets. It is not in this
-Terraform because it owns the Next build output, and a module that tried to
-own that would have to know about it.
+Add the `site_url` origin to the Clerk application's allowed origins (and use a
+production instance with `pk_live_`/`sk_live_` keys for real farmers). A Clerk
+production instance needs a domain you own — it asks for DNS records, which a
+`*.cloudfront.net` address cannot have — so set `domain_name` and
+`acm_certificate_arn` first. Google and Apple sign-in also need your own OAuth
+credentials in a production instance; the development instance borrows Clerk's.
 
-```bash
-npx @opennextjs/aws build
-aws s3 sync .open-next/assets "s3://$(terraform -chdir=terraform output -raw frontend_bucket)/_next/static" \
-  --cache-control "public,max-age=31536000,immutable"
-# deploy .open-next/server-function as a Lambda with a function URL, then:
-terraform apply -var-file=envs/dev.tfvars -var next_origin_domain=<id>.lambda-url.ap-south-1.on.aws
-```
+The reading service accepts only session tokens issued to `site_url`
+(`CLERK_AUTHORIZED_PARTIES`, set by Terraform), so a token minted for any other
+site on the same Clerk instance is refused.
 
-### 6. Open it
+### Open it
 
 ```bash
 terraform output site_url
 ```
-
----
 
 ## Checking it
 
 ```bash
 terraform fmt -recursive -check
 terraform validate
+terraform plan -var-file=envs/dev.tfvars
 checkov -d .          # if you have it
 ```
 
-The ALB's DNS name is an output, and **curling it from a laptop will time
-out**. That is correct: its security group admits only CloudFront's published
-prefix list, so the WAF cannot be walked around by going straight to the
-origin — which is the usual reason an edge WAF turns out to be decorative.
+`alb_dns_name` answers **403** to a request from a laptop. That is correct: the
+listener forwards only requests carrying CloudFront's origin header, so the WAF
+cannot be walked around by going straight to the origin.
 
 ## Tearing down
 
 ```bash
-terraform destroy -var-file=envs/dev.tfvars -var next_origin_domain=example.com
+terraform destroy -var-file=envs/dev.tfvars
 ```
 
-`prod` has deletion protection on the ALB and a 30-day recovery window on
-secrets, both of which have to be cleared by hand first. `dev` does not.
+In `prod`, the ALB has deletion protection and secrets a 30-day recovery
+window; both are deliberate.

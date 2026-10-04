@@ -144,6 +144,12 @@ export type PredictionResult = {
   crops: PredictedCrop[];
   fertilizers: PredictedFertilizer[];
   /**
+   * The crop the fertilizer model was run for — the top-ranked one. Optional
+   * only so a response from an older backend still parses; such a response
+   * simply names no crop on the fertilizer cards.
+   */
+  fertilizers_for?: string;
+  /**
    * Whether the card printed a range for each macronutrient to judge the
    * submitted reading against. `null` means no bag could be ruled in or out on
    * that nutrient — materially different from ruling them all out, and the UI

@@ -5,7 +5,7 @@ import { cn } from "@/lib/cn";
 /**
  * Photography in a rounded container, with a panel breaking its edge.
  *
- * The most repeated device across both product references (PLAN.md §5), and
+ * The most repeated device across both product references (research and plan/PLAN.md §5), and
  * the reason it is one component: it covers the landing's plot section, the
  * dashboard's map readout, the crop cards and the report header. Build it
  * once, well.

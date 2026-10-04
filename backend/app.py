@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import logging
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .auth import require_user
@@ -14,8 +15,15 @@ from . import ratelimit
 from .document_service import DocumentService
 from .agents import demand, queue as agent_queue, storage as agent_storage
 from .agents.topics import find_topic
-from .config import AGENTS_ENABLED, AGENTS_INTERVAL_HOURS, CLERK_ENABLED
-from .models import MissingInput, ModelsUnavailable, availability, predict_all
+from .config import AGENTS_ENABLED, AGENTS_INTERVAL_HOURS, CLERK_ENABLED, LLM_CONFIGURED, LLM_PROVIDER
+from . import chat as farmer_chat
+from .models import (
+    MissingInput,
+    ModelsUnavailable,
+    availability,
+    predict_all,
+    predict_soil,
+)
 from .ingest import (
     HEIC_SUPPORTED,
     UnreadableDocument,
@@ -41,16 +49,20 @@ through its own route handler (`src/app/api/card/route.ts`), so this service is
 only ever called server-to-server and should not be reachable from a browser.
 """
 
+logger = logging.getLogger("agrosense.app")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start the research sweep with the service, stop it with the service.
 
-    A no-op without an OPENAI_API_KEY, so a clone runs the card reader and the
+    A no-op without model credentials, so a clone runs the card reader and the
     three models without an account anywhere.
     """
     from .agents.scheduler import start_scheduler, stop_scheduler
 
     start_scheduler()
+    _warm_models()
     try:
         yield
     finally:
@@ -58,6 +70,29 @@ async def lifespan(app: FastAPI):
         # On-demand research runs on its own worker pool, so stopping the
         # scheduler is no longer enough to let the process exit.
         agent_queue.shutdown()
+
+
+def _warm_models() -> None:
+    """Load the three models in the background, before the first farmer does.
+
+    A torch import plus the EfficientNet checkpoint is 30-60 seconds cold — on a
+    slow disk, more than the frontend's 60-second timeout — and it used to be
+    paid inside the first `/api/soil` of every new process, which then failed.
+    A daemon thread keeps startup instant (health checks pass at once) and the
+    `lru_cache` on each loader means the request finds the model already there.
+    """
+    import threading
+
+    def warm() -> None:
+        from . import models as m
+
+        for loader in (m._crop_model, m._fertilizer_model, m._soil_model):
+            try:
+                loader()
+            except Exception as exc:  # noqa: BLE001 — a missing artifact is reported by /api/health
+                logger.warning("model warm-up skipped %s: %s", loader.__name__, exc)
+
+    threading.Thread(target=warm, name="model-warmup", daemon=True).start()
 
 
 app = FastAPI(title="AgroSense reading service", version="4.0.0", lifespan=lifespan)
@@ -230,7 +265,7 @@ def insights(category: str, slug: str) -> dict[str, object]:
                 "appear after the next research sweep."
                 if AGENTS_ENABLED
                 else "Live information is not configured on this server "
-                "(no OPENAI_API_KEY)."
+                "(no model credentials)."
             ),
             "enabled": AGENTS_ENABLED,
             **freshness,
@@ -391,6 +426,75 @@ def predict(
     return result
 
 
+@app.post("/api/soil")
+def soil(
+    soil_image: UploadFile = File(...),
+    user: dict = Depends(require_user),
+) -> dict[str, object]:
+    """What the photograph says the ground is. Nothing else.
+
+    Split out of `/api/predict` when the recommendation engine took over crops
+    and fertiliser. Those two heads asked the farmer for temperature, humidity,
+    rainfall and soil moisture — four numbers nobody standing in a field can
+    measure, and which every prediction this product ever made had silently
+    defaulted. The engine derives all four from the taluka's own climatology
+    instead, so the questions are gone and this route asks for none of them.
+
+    No `document_id` either. The card mattered to the old path because the
+    printed nutrient ranges decided whether a bag was a purchase or a hold;
+    naming a soil from a photograph needs no card, and requiring one would be
+    asking for a document to satisfy a dependency that no longer exists.
+
+    What comes back is a class, a confidence, and the full probability vector.
+    It is deliberately not a recommendation — but it is no longer only a check
+    either. The engine fuses these probabilities with the taluka's surveyed
+    soil type, weighing them by the classifier's measured confusion matrix, and
+    the result can change which crops are ranked.
+
+    The whole vector matters, not just the top class: a 0.45/0.44 split and a
+    0.45/0.05 one are different facts and identical once truncated to a ranked
+    list. What fusion still cannot do is establish depth, drainage or salinity
+    — none of which a photograph can show — so those keep the surveyed value
+    and a picture can never lift a safety veto.
+    """
+    enforce_limit(user, "predict")
+
+    image_bytes = soil_image.file.read()
+    if not image_bytes:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "The soil photograph was empty. Send the picture again."},
+        )
+
+    try:
+        prediction = predict_soil(image_bytes)
+    except ModelsUnavailable as exc:
+        raise HTTPException(status_code=503, detail={"message": str(exc)}) from exc
+
+    result = {
+        "key": prediction.key,
+        "confidence": prediction.confidence,
+        "alternatives": prediction.alternatives,
+        "note": prediction.note,
+        # The full distribution, for the engine's soil fusion to weigh against
+        # the taluka survey. The ranked list above is what a person reads; this
+        # is what the recommendation actually consumes.
+        "probabilities": prediction.probabilities,
+    }
+
+    # The soil topic is still worth researching even though no crop was
+    # ranked here. Same fire-and-forget rule as `/api/predict`: bookkeeping
+    # for a background job must never turn a good answer into a 500.
+    try:
+        predicted = {"soil": [prediction.key], "crop": [], "fertilizer": []}
+        demand.record(predicted)
+        result["research"] = agent_queue.request_now(predicted)
+    except Exception:
+        pass
+
+    return result
+
+
 @app.post("/api/ingest")
 def ingest(
     file: UploadFile = File(...),
@@ -439,6 +543,38 @@ def get_document(
         return documents.get(document_id, owner_id=user["id"])
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Document not found.") from exc
+
+
+@app.post("/api/chat")
+def chat(
+    payload: farmer_chat.ChatRequest,
+    user: dict = Depends(require_user),
+) -> StreamingResponse:
+    """The farmer assistant, streamed as NDJSON (see `backend/chat.py`).
+
+    Signed-in and rate-limited for the same reason `/api/predict` is: every
+    message is a paid model call. Refused up front, before any stream opens,
+    when no model is configured — a 503 the page can explain, rather than an
+    empty bubble.
+    """
+    enforce_limit(user, "chat")
+    if LLM_PROVIDER != "bedrock" or not LLM_CONFIGURED:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": {
+                    "mr": "सहाय्यक या सर्व्हरवर सुरू केलेला नाही.",
+                    "en": "The assistant is not configured on this server.",
+                }
+            },
+        )
+    return StreamingResponse(
+        farmer_chat.stream_reply(payload),
+        media_type="application/x-ndjson",
+        # Proxies buffer a response they think is ordinary; these keep each
+        # line moving to the phone as it is written.
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/ask")

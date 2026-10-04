@@ -1,0 +1,31 @@
+# Build context for Dockerfile.web — the Next.js app. BuildKit reads this file
+# instead of the root .dockerignore because its name matches the Dockerfile's.
+
+# Secrets never enter an image: the runtime gets them from Secrets Manager.
+.env
+.env.*
+
+# Build output and dependencies are rebuilt inside the image.
+node_modules/
+.next/
+.open-next/
+
+# The Python services and their data are other images.
+backend/
+ML/
+ml/
+ml engine for Recommendation/
+data set of the project/
+.venv/
+terraform/
+research and plan/
+scrape data imp/
+no_now/
+aws p2 work properly/
+
+# Editor and VCS state.
+.git/
+.idea/
+.vscode/
+*.log
+.DS_Store

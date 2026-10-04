@@ -63,7 +63,7 @@ import {
  *
  * Colour is the product's green and turmeric throughout. Rainfall is green,
  * which is what `globals.css` always intended — the five-step leaf ramp exists
- * to drive "the rainfall calendar" (PLAN.md §3) and this is it. Turmeric
+ * to drive "the rainfall calendar" (research and plan/PLAN.md §3) and this is it. Turmeric
  * carries heat and air. Pomegranate appears only where something is wrong,
  * which is how it keeps meaning anything.
  */

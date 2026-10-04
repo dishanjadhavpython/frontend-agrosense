@@ -3,7 +3,7 @@ import { clamp } from "@/lib/format";
 
 /**
  * The dotted arc — a semicircle built from a dot matrix rather than a stroked
- * path. Taken precisely from the dashboard reference (PLAN.md §7) because the
+ * path. Taken precisely from the dashboard reference (research and plan/PLAN.md §7) because the
  * dot grid reads as an instrument, where a smooth arc reads as a chart.
  *
  * Rows thin out toward the centre so dot density stays even across the band.

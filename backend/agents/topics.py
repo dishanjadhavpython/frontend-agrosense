@@ -11,6 +11,14 @@ from ..config import soil_classes
 # the fertilizer blends previously described in the old static
 # fertilizer-info.html) rather than an open-ended "any crop" scope, which
 # keeps the topic list bounded, predictable, and cheap to keep fresh.
+#
+# KEEP IN LOCKSTEP WITH `src/data/crops.ts` and `src/data/fertilizers.ts`.
+# `src/data/topics.ts` derives its key lists from those two files and feeds
+# `generateStaticParams`, and all three `/prediction/*` routes set
+# `dynamicParams = false`. So a name here that is missing there is a report
+# nobody can read, and a name there that is missing here is a page with
+# nothing on it. `npm run check:ontology` catches the engine half of this;
+# this file is the research half and is not machine-checked.
 
 CROPS = [
     "apple",
@@ -35,6 +43,24 @@ CROPS = [
     "pomegranate",
     "rice",
     "watermelon",
+    # ---- Added with the recommendation engine -----------------------------
+    # The twelve Maharashtra staples the engine ranks. They must appear here
+    # as well as in `src/data/crops.ts`: the crop list drives
+    # `generateStaticParams`, so without a matching topic the detail page is
+    # built and then has no report behind it -- the same silent gap the SOILS
+    # comment below records, arriving from the other direction.
+    "sorghum",
+    "pearlmillet",
+    "wheat",
+    "fingermillet",
+    "soybean",
+    "groundnut",
+    "safflower",
+    "sunflower",
+    "sesame",
+    "linseed",
+    "mustard",
+    "sugarcane",
 ]
 
 # Read from the trained classifier's metadata rather than a constant. This
@@ -51,6 +77,10 @@ FERTILIZERS = [
     "14-35-14",
     "17-17-17",
     "28-28",
+    # The two straight fertilisers the recommendation engine doses that this
+    # list never carried, because the old model could not name them.
+    "mop",
+    "ssp",
 ]
 
 CATEGORIES = ("crop", "soil", "fertilizer")

@@ -89,13 +89,19 @@ data "aws_ec2_managed_prefix_list" "cloudfront" {
   name = "com.amazonaws.global.cloudfront.origin-facing"
 }
 
+# Port 80, because that is the port CloudFront's origin uses: TLS terminates at
+# the edge and the origin is `http-only` (see the edge module). This rule used
+# to open 443 while the listener and the origin both spoke 80, so every request
+# CloudFront forwarded would have been dropped here. The listener additionally
+# refuses anything without CloudFront's origin header (see the platform module),
+# so the prefix list is the first of two locks, not the only one.
 resource "aws_vpc_security_group_ingress_rule" "alb_from_cloudfront" {
   security_group_id = aws_security_group.alb.id
-  description       = "HTTPS from CloudFront edge locations only"
+  description       = "HTTP from CloudFront edge locations only"
   prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
   ip_protocol       = "tcp"
-  from_port         = 443
-  to_port           = 443
+  from_port         = 80
+  to_port           = 80
 }
 
 resource "aws_vpc_security_group_egress_rule" "alb_all" {
@@ -107,7 +113,7 @@ resource "aws_vpc_security_group_egress_rule" "alb_all" {
 
 resource "aws_security_group" "service" {
   name        = "${var.name_prefix}-service"
-  description = "The reading service. Inbound from the ALB and nothing else."
+  description = "The three services. Inbound from the ALB (web only) and from each other."
   vpc_id      = aws_vpc.main.id
 
   tags = { Name = "${var.name_prefix}-service" }
@@ -118,19 +124,31 @@ resource "aws_security_group" "service" {
 # balancer and by nothing else on the internet.
 resource "aws_vpc_security_group_ingress_rule" "service_from_alb" {
   security_group_id            = aws_security_group.service.id
-  description                  = "From the load balancer only"
+  description                  = "The web app, from the load balancer only"
   referenced_security_group_id = aws_security_group.alb.id
   ip_protocol                  = "tcp"
-  from_port                    = var.service_port
-  to_port                      = var.service_port
+  from_port                    = var.web_port
+  to_port                      = var.web_port
 }
 
-# Outbound is open because the service genuinely needs it: pulling its own
-# image from ECR, and calling OpenAI, data.gov.in and the search backends that
-# the research agents run on.
+# Service Connect traffic: the web app calling the reading service and the
+# engine. Source is this same group, so the API and the engine answer the web
+# app and nothing on the internet — neither has a public route of any kind.
+resource "aws_vpc_security_group_ingress_rule" "service_from_service" {
+  security_group_id            = aws_security_group.service.id
+  description                  = "Service Connect between the three services"
+  referenced_security_group_id = aws_security_group.service.id
+  ip_protocol                  = "tcp"
+  from_port                    = 1024
+  to_port                      = 65535
+}
+
+# Outbound is open because the services genuinely need it: pulling images from
+# ECR, Bedrock and Secrets Manager, Clerk's JWKS, and data.gov.in and the search
+# backends the research tools call. There is no NAT to pin an address on.
 resource "aws_vpc_security_group_egress_rule" "service_all" {
   security_group_id = aws_security_group.service.id
-  description       = "ECR, OpenAI, data.gov.in, search backends"
+  description       = "ECR, Bedrock, Secrets Manager, Clerk, data.gov.in, search backends"
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }

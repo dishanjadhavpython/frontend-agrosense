@@ -92,7 +92,7 @@ variable "waf_bot_control" {
 variable "monthly_budget_usd" {
   description = "AWS Budgets alert threshold. An email arrives at 80% and 100%."
   type        = number
-  default     = 75
+  default     = 150
 }
 
 variable "budget_alert_email" {
@@ -116,16 +116,148 @@ variable "card_retention_days" {
   default     = 90
 }
 
-variable "next_origin_domain" {
+# ---- The web app (Next.js on Fargate) --------------------------------------
+
+variable "web_cpu" {
+  description = "CPU units for the Next.js task (1024 = 1 vCPU)."
+  type        = number
+  default     = 512
+}
+
+variable "web_memory" {
+  description = "MiB for the Next.js task."
+  type        = number
+  default     = 1024
+}
+
+variable "web_desired_count" {
+  type    = number
+  default = 1
+}
+
+variable "web_image_tag" {
+  type    = string
+  default = "latest"
+}
+
+variable "clerk_publishable_key" {
+  description = "Clerk's publishable key (pk_...). Public by design; also baked into the web image at build."
+  type        = string
+  default     = ""
+}
+
+# ---- The recommendation engine (taluka x season) ---------------------------
+
+variable "engine_cpu" {
+  description = "The engine holds the 351-taluka feature store and three fitted models in memory."
+  type        = number
+  default     = 1024
+}
+
+variable "engine_memory" {
+  type    = number
+  default = 4096
+}
+
+variable "engine_desired_count" {
+  type    = number
+  default = 1
+}
+
+variable "engine_image_tag" {
+  type    = string
+  default = "latest"
+}
+
+# ---- The research sweep (Lambda) ------------------------------------------
+
+variable "agents_image_tag" {
+  type    = string
+  default = "latest"
+}
+
+variable "agents_batch_size" {
+  description = "Topics per scheduled sweep — the ceiling on Bedrock spend per run."
+  type        = number
+  default     = 6
+}
+
+# ---- Amazon Bedrock -------------------------------------------------------
+
+variable "bedrock_model_id" {
   description = <<-EOT
-    Host of the Next.js server origin — an OpenNext Lambda function URL,
-    without the scheme.
-
-    There is no default because there is no correct one. On the very first
-    apply, before OpenNext has run, pass any resolvable host as a placeholder
-    and re-apply once the real function URL exists:
-
-      terraform apply -var next_origin_domain=example.com
+    Model for the research agents and document Q&A. A cross-region inference
+    profile: in ap-south-1, Nova Pro is served only through `apac.`.
   EOT
   type        = string
+  default     = "apac.amazon.nova-pro-v1:0"
+}
+
+variable "bedrock_chat_model_id" {
+  description = "Model for the farmer chat. Empty means the same as bedrock_model_id."
+  type        = string
+  default     = ""
+}
+
+# ---- Security -------------------------------------------------------------
+
+variable "guardduty_runtime_monitoring" {
+  description = "GuardDuty runtime monitoring for the Fargate tasks. Billed per vCPU-hour."
+  type        = bool
+  default     = false
+}
+
+variable "enable_security_hub" {
+  description = "AWS Security Hub with the Foundational Security Best Practices standard."
+  type        = bool
+  default     = false
+}
+
+variable "enable_inspector" {
+  description = "Amazon Inspector continuous CVE scanning of the ECR images and the Lambda."
+  type        = bool
+  default     = false
+}
+
+variable "waf_chat_rate_limit_per_5min" {
+  description = "Per-IP ceiling on /api/chat, the free-text endpoint that costs a model call."
+  type        = number
+  default     = 60
+}
+
+variable "waf_logging" {
+  description = "WAF request logs to CloudWatch (us-east-1), credentials redacted."
+  type        = bool
+  default     = true
+}
+
+variable "trail_retention_days" {
+  description = "How long CloudTrail's audit logs are kept."
+  type        = number
+  default     = 365
+}
+
+# ---- Edge -----------------------------------------------------------------
+
+variable "cloudfront_price_class" {
+  description = "PriceClass_200 is the cheapest class that includes India's edge locations."
+  type        = string
+  default     = "PriceClass_200"
+}
+
+variable "domain_name" {
+  description = "Optional custom domain. Empty serves on the cloudfront.net address."
+  type        = string
+  default     = ""
+}
+
+variable "acm_certificate_arn" {
+  description = "ACM certificate for domain_name, in us-east-1 (a CloudFront requirement)."
+  type        = string
+  default     = ""
+}
+
+variable "log_retention_days" {
+  type    = number
+  default = 30
 }

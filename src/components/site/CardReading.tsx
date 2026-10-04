@@ -45,7 +45,7 @@ import { Reveal } from "@/components/ui/Reveal";
  *
  * Drawn with divs. These are percentages of a width, there is no trigonometry,
  * and `<ArcGauge>` already established what server/client float drift does to
- * an SVG (PLAN.md §9).
+ * an SVG (research and plan/PLAN.md §9).
  */
 
 type Sort = "card" | "worst";

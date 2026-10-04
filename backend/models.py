@@ -157,6 +157,12 @@ class SoilPrediction:
     confidence: float
     alternatives: list[dict[str, Any]]
     note: str
+    #: Every class with its calibrated probability, not just the ranked few.
+    #: The engine's soil fusion weighs the whole distribution against the
+    #: taluka's soil survey (`src/rules/soil_fusion.py`), so a truncated
+    #: top-three is not enough to hand it — a 0.45/0.44 split and a 0.45/0.05
+    #: one mean very different things and look identical after truncation.
+    probabilities: dict[str, float] | None = None
 
 
 # --------------------------------------------------------------------------
@@ -308,6 +314,8 @@ def predict_soil(image_bytes: bytes, *, top_k: int = 3) -> SoilPrediction:
         confidence=ranked[0]["confidence"],
         alternatives=ranked[1:],
         note=describe_soil(ranked[0]["key"]),
+        probabilities={name: round(float(probabilities[i]), 6)
+                       for i, name in enumerate(classes)},
     )
 
 
@@ -567,6 +575,11 @@ def predict_all(
         },
         "crops": crops,
         "fertilizers": fertilizers,
+        # The crop the fertilizer model was run for. Stated rather than left
+        # for a client to infer from `crops[0]`: a fertilizer card that names
+        # the crop it serves must name the one the model actually scored, not
+        # whichever crop a hand-written example happened to pair it with.
+        "fertilizers_for": top_crop,
         # Always true now that the photograph is required. Kept so the response
         # shape does not change under clients that still read it.
         "soil_applied": True,

@@ -84,9 +84,33 @@ resource "aws_wafv2_web_acl" "main" {
   }
 
   # ---- 3. Site-wide flood control ---------------------------------------
+  # Log4j/Java-deserialisation style payloads and other inputs known to be
+  # exploit attempts — cheap to match and never a farmer's question.
+  rule {
+    name     = "known-bad-inputs"
+    priority = 3
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        vendor_name = "AWS"
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "known-bad-inputs"
+      sampled_requests_enabled   = true
+    }
+  }
+
   rule {
     name     = "rate-site"
-    priority = 3
+    priority = 4
 
     action {
       block {}
@@ -112,7 +136,7 @@ resource "aws_wafv2_web_acl" "main" {
   # key. Those deserve a lower ceiling than reading a crop page.
   rule {
     name     = "rate-api"
-    priority = 4
+    priority = 5
 
     action {
       block {}
@@ -150,12 +174,52 @@ resource "aws_wafv2_web_acl" "main" {
   #
   # Roughly $10/month plus per-request charges — the largest optional line in
   # this stack, which is why it is off by default rather than quietly on.
+
+  # The chat is the one endpoint that takes free text and costs a model call per
+  # message. The per-user daily quota in the service is the real cost control;
+  # this stops a single address hammering it before a request reaches compute.
+  rule {
+    name     = "rate-chat"
+    priority = 6
+
+    action {
+      block {}
+    }
+
+    statement {
+      rate_based_statement {
+        limit              = var.chat_rate_limit_per_5min
+        aggregate_key_type = "IP"
+
+        scope_down_statement {
+          byte_match_statement {
+            positional_constraint = "STARTS_WITH"
+            search_string         = "/api/chat"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "LOWERCASE"
+            }
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "rate-chat"
+      sampled_requests_enabled   = true
+    }
+  }
+
   dynamic "rule" {
     for_each = var.bot_control ? [1] : []
 
     content {
       name     = "bot-control"
-      priority = 5
+      priority = 7
 
       override_action {
         none {}
@@ -186,5 +250,37 @@ resource "aws_wafv2_web_acl" "main" {
     cloudwatch_metrics_enabled = true
     metric_name                = "${var.name_prefix}-web-acl"
     sampled_requests_enabled   = true
+  }
+}
+
+# ---- Logging ---------------------------------------------------------------
+#
+# Every blocked or sampled request, kept 30 days. WAF only logs to a group whose
+# name starts `aws-waf-logs-`, in the web ACL's own region. The session cookie
+# and the Authorization header are redacted: they are Clerk credentials, and a
+# log line is not a place to keep one.
+
+resource "aws_cloudwatch_log_group" "waf" {
+  count             = var.logging ? 1 : 0
+  provider          = aws.us_east_1
+  name              = "aws-waf-logs-${var.name_prefix}"
+  retention_in_days = 30
+}
+
+resource "aws_wafv2_web_acl_logging_configuration" "main" {
+  count                   = var.logging ? 1 : 0
+  provider                = aws.us_east_1
+  resource_arn            = aws_wafv2_web_acl.main.arn
+  log_destination_configs = [aws_cloudwatch_log_group.waf[0].arn]
+
+  redacted_fields {
+    single_header {
+      name = "authorization"
+    }
+  }
+  redacted_fields {
+    single_header {
+      name = "cookie"
+    }
   }
 }

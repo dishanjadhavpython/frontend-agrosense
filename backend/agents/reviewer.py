@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from agents import Agent, Runner
 
-from ..config import AGENTS_MODEL
+from .model_provider import agent_model
 from .context import dated_context
 from .schemas import ReviewResult, TopicReport
 from .mcp_servers.seller_server import seller_of
@@ -140,7 +140,7 @@ async def review_report(topic: Topic, report: TopicReport) -> ReviewResult:
         Agent(
             name="Reviewer Agent",
             instructions=f"{dated_context()}\n\n{REVIEWER_INSTRUCTIONS}",
-            model=AGENTS_MODEL,
+            model=agent_model(),
             output_type=ReviewResult,
         ),
         _build_prompt(topic, report),

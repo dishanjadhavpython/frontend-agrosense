@@ -7,6 +7,7 @@ import { PREDICTED_SOIL } from "@/data/prediction";
 import { SoilVisuals } from "./SoilVisuals";
 import { Insights } from "./Insights";
 import { LiveSoilBand } from "./LiveBand";
+import { useHasPrediction, useLiveSoil } from "@/lib/livePick";
 import { Badge, DetailPage } from "./DetailPage";
 
 /**
@@ -21,11 +22,17 @@ import { Badge, DetailPage } from "./DetailPage";
 export function SoilDetail({ soilKey }: { soilKey: string }) {
   const { lang } = useLang();
   const mr = lang === "mr";
+  const hasPrediction = useHasPrediction();
+  const isLive = useLiveSoil(soilKey) !== null;
   const soil = SOILS.find((s) => s.key === soilKey);
   if (!soil) return null;
 
   const retention = retentionLabel[soil.retention];
-  const pick = PREDICTED_SOIL.key === soilKey ? PREDICTED_SOIL : undefined;
+  // The worked example's prose is about one sample card ("the card reads pH
+  // 4.88…"). Beside a farmer's own result it would read as theirs, so it is
+  // shown only to someone who has not sent a card, and labelled as a sample.
+  const pick =
+    !hasPrediction && PREDICTED_SOIL.key === soilKey ? PREDICTED_SOIL : undefined;
 
   return (
     <DetailPage
@@ -40,6 +47,8 @@ export function SoilDetail({ soilKey }: { soilKey: string }) {
         </Badge>
       }
       live={<LiveSoilBand soilKey={soilKey} />}
+      isLive={isLive}
+      example={pick !== undefined}
       visuals={<SoilVisuals soilKey={soilKey} />}
       why={pick?.why}
       facts={pick?.facts}

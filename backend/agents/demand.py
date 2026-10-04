@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 
+from . import kv
 from ..config import AGENT_REPORTS_DIR, AGENTS_INTERVAL_HOURS
 from . import storage
 from .topics import Topic, find_topic, slugify
@@ -41,26 +39,16 @@ def _now() -> datetime:
 
 
 def _read() -> dict[str, dict[str, Any]]:
-    if not LEDGER_PATH.exists():
-        return {}
-    try:
-        return json.loads(LEDGER_PATH.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {}
+    # `_demand.json` locally, one DynamoDB item on AWS — shared with the sweep
+    # Lambda, which can only research what this ledger says farmers were shown.
+    return kv.get("_demand") or {}
 
 
 def _write(ledger: dict[str, dict[str, Any]]) -> None:
-    """Atomic replace. A prediction landing while the scheduler reads the
-    ledger must not present it with half a file."""
-    LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(dir=str(LEDGER_PATH.parent), suffix=".tmp")
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as file:
-            json.dump(ledger, file, indent=2, ensure_ascii=False)
-        os.replace(temporary, LEDGER_PATH)
-    except Exception:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+    """Atomic replace (files) or a single item put (DynamoDB). A prediction
+    landing while the scheduler reads the ledger must not present it with half
+    a file."""
+    kv.put("_demand", ledger)
 
 
 def _key(category: str, name: str) -> str:

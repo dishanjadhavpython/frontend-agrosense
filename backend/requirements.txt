@@ -68,3 +68,4 @@ lxml>=5.0,<7.0
 # supported state (localhost only); the *package* is not optional, because
 # `auth.py` is imported on every request path.
 clerk-backend-api>=3.0,<4.0
+boto3>=1.39                      # Bedrock (Nova Pro) for agents, chat and answers; DynamoDB rate limits

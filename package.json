@@ -4,13 +4,20 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run check:csp-hash && next build",
+    "build": "npm run check:csp-hash && npm run check:ontology && npm run check:examiner && next build",
     "start": "next start",
     "lint": "eslint",
     "api": "./.venv/bin/uvicorn backend.app:app --host 127.0.0.1 --port 8000 --reload",
     "api:install": "./.venv/bin/pip install -r backend/requirements.txt",
     "api:test": "./.venv/bin/python -m unittest discover -s backend/tests -t .",
-    "check:csp-hash": "node scripts/check-csp-hash.mjs"
+    "recommend": "cd 'ml engine for Recommendation' && ./.venv/bin/uvicorn src.serve.api:app --host 127.0.0.1 --port 8001",
+    "recommend:install": "cd 'ml engine for Recommendation' && ./.venv/bin/pip install -r requirements.txt",
+    "recommend:test": "cd 'ml engine for Recommendation' && ./.venv/bin/python -m pytest tests -q",
+    "check:csp-hash": "node scripts/check-csp-hash.mjs",
+    "check:ontology": "node scripts/check-ontology.mjs",
+    "qa:examiner": "node scripts/examiner-qa.mjs",
+    "data:examiner": "node scripts/build-examiner-data.mjs",
+    "check:examiner": "node scripts/build-examiner-data.mjs --check"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.6.4",
@@ -30,6 +37,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "playwright": "^1.63.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

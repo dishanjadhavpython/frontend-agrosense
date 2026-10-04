@@ -4,6 +4,7 @@ import {
   Mukta,
   IBM_Plex_Mono,
   Tiro_Devanagari_Marathi,
+  Fraunces,
 } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { LanguageProvider } from "@/lib/i18n";
@@ -12,7 +13,7 @@ import { clerkAppearance } from "@/lib/clerkAppearance";
 import "./globals.css";
 
 /**
- * Four faces, four jobs. See PLAN.md §3.
+ * Four faces, four jobs. See research and plan/PLAN.md §3.
  *
  * Anek carries the display register in both scripts — its width axis is the
  * reason one family can set the quiet headline and the rare loud one without
@@ -47,6 +48,25 @@ const tiro = Tiro_Devanagari_Marathi({
   display: "swap",
 });
 
+/**
+ * The fifth face, and the only one the farmer product never loads.
+ *
+ * The examiner walkthrough is English-only technical prose, and the other four
+ * families are all Devanagari-first: correct for the product, merely competent
+ * set in Latin at 48px. Fraunces is a display serif with an optical-size axis,
+ * so one variable file covers a 13px chapter number and a 56px title without
+ * the headline looking like inflated body text.
+ *
+ * Latin only, and referenced solely from inside `.examiner-skin`, so a farmer
+ * on a phone never pays for it.
+ */
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  axes: ["opsz", "SOFT"],
+  variable: "--font-fraunces",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: {
     default: "अ‍ॅग्रोसेन्स — तुमच्या मातीला काय हवंय, ते आम्ही सांगू",
@@ -77,7 +97,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       // never rendered. Suppression applies to this element only — it does
       // not extend into the tree, so real mismatches below still surface.
       suppressHydrationWarning
-      className={`${anek.variable} ${mukta.variable} ${plexMono.variable} ${tiro.variable} h-full antialiased`}
+      className={`${anek.variable} ${mukta.variable} ${plexMono.variable} ${tiro.variable} ${fraunces.variable} h-full antialiased`}
     >
       <head>
         {/* Sets data-theme before the first paint. Without it, someone who
@@ -99,8 +119,17 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             above anything that renders; `LanguageProvider` is a client context
             with no such needs. The sign-in UI is themed through `appearance`
             rather than by inheriting from a wrapper, which is why the nesting
-            order is free to be the safe one. */}
-        <ClerkProvider appearance={clerkAppearance}>
+            order is free to be the safe one.
+
+            `dynamic` is what makes the strict CSP in `middleware.ts` work.
+            That policy carries a fresh nonce per request, and under
+            `strict-dynamic` a script without it does not run — so Clerk's own
+            loader needs the nonce (only `dynamic` hands it over), and every
+            page has to render per request for Next.js to stamp its scripts
+            with it. Without this, the browser blocked Clerk outright: no
+            sign-in, so no card upload and no prediction, and in a production
+            build the statically rendered pages could not hydrate at all. */}
+        <ClerkProvider appearance={clerkAppearance} dynamic>
           <LanguageProvider>{children}</LanguageProvider>
         </ClerkProvider>
       </body>

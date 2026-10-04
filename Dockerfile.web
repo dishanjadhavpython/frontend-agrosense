@@ -1,0 +1,53 @@
+# The Next.js app, for ECS Fargate (ARM64/Graviton, like the other services).
+#
+# Built from the repo root:
+#   docker build --platform linux/arm64 -f Dockerfile.web \
+#     --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_... -t <repo>:<tag> .
+#
+# `Dockerfile.web.dockerignore` beside this file is the build context filter —
+# BuildKit picks it up by name, so the root `.dockerignore` (which is written for
+# the Python service and excludes `src/`) does not apply here.
+#
+# Three stages: dependencies, build, and a runtime that carries only Next's
+# standalone server. The runtime runs as an unprivileged user and holds no
+# secret: CLERK_SECRET_KEY and AGROSENSE_API_KEY arrive from Secrets Manager
+# through the ECS task definition at start.
+
+FROM node:22-alpine AS deps
+WORKDIR /app
+RUN apk add --no-cache libc6-compat
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+# Public by design — it is the key the browser uses — but it is inlined into the
+# client bundle at build time, so it has to be here and not only at runtime.
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+ARG NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
+    NEXT_PUBLIC_CLERK_SIGN_IN_URL=$NEXT_PUBLIC_CLERK_SIGN_IN_URL \
+    NEXT_PUBLIC_CLERK_SIGN_UP_URL=$NEXT_PUBLIC_CLERK_SIGN_UP_URL \
+    NEXT_TELEMETRY_DISABLED=1
+# The same gates `npm run build` runs, minus `check:examiner`, which compares
+# the examiner pages against training artifacts this context does not carry.
+RUN npm run check:csp-hash && npm run check:ontology && npx next build
+
+FROM node:22-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+RUN addgroup -S -g 10001 web && adduser -S -u 10001 -G web web
+COPY --from=build --chown=web:web /app/.next/standalone ./
+COPY --from=build --chown=web:web /app/.next/static ./.next/static
+COPY --from=build --chown=web:web /app/public ./public
+USER web
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1
+CMD ["node", "server.js"]

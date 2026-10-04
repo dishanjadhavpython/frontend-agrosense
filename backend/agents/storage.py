@@ -1,39 +1,24 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-from ..config import AGENT_REPORTS_DIR
+from . import kv
 from .topics import Topic, all_topics
 
 
-def _report_path(category: str, slug: str) -> Path:
-    return AGENT_REPORTS_DIR / category / f"{slug}.json"
-
-
 def save_report(topic: Topic, report: dict[str, Any]) -> None:
-    path = _report_path(topic.category, topic.slug)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    # Files locally, DynamoDB on AWS — see `kv.py` for why it has to be shared.
     payload = dict(report)
     payload.setdefault("category", topic.category)
     payload.setdefault("name", topic.name)
     payload.setdefault("slug", topic.slug)
     payload["generated_at"] = datetime.now(timezone.utc).isoformat()
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, ensure_ascii=False)
+    kv.put(f"{topic.category}/{topic.slug}", payload)
 
 
 def load_report(category: str, slug: str) -> dict[str, Any] | None:
-    path = _report_path(category, slug)
-    if not path.exists():
-        return None
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except (json.JSONDecodeError, OSError):
-        return None
+    return kv.get(f"{category}/{slug}")
 
 
 def list_reports() -> list[dict[str, Any]]:
@@ -68,23 +53,9 @@ def least_recently_updated_topics(limit: int) -> list[Topic]:
     return ranked[:limit]
 
 
-def _run_status_path() -> Path:
-    return AGENT_REPORTS_DIR / "_run_status.json"
-
-
 def save_run_status(status: dict[str, Any]) -> None:
-    path = _run_status_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(status, handle, indent=2, ensure_ascii=False)
+    kv.put("_run_status", status)
 
 
 def load_run_status() -> dict[str, Any] | None:
-    path = _run_status_path()
-    if not path.exists():
-        return None
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except (json.JSONDecodeError, OSError):
-        return None
+    return kv.get("_run_status")

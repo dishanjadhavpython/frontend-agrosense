@@ -84,9 +84,26 @@ resource "aws_iam_role_policy" "agents_data" {
         Resource = var.reports_table_arn
       },
       {
+        # Only the optional tool keys (YouTube, data.gov.in). The model needs
+        # no key at all: Bedrock is reached with this role.
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
         Resource = values(var.secret_arns)
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = var.kms_key_arn
+        Condition = {
+          StringEquals = { "kms:ViaService" = "secretsmanager.${var.region}.amazonaws.com" }
+        }
+      },
+      {
+        # Nova Pro through the APAC cross-region profile: the profile itself,
+        # plus the model in every region the profile may route a call to.
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        Resource = var.bedrock_resource_arns
       },
     ]
   })
@@ -110,15 +127,27 @@ resource "aws_lambda_function" "agents" {
   timeout     = 900
   memory_size = 2048
 
+  # One sweep at a time. The pipeline already de-duplicates topics, but two
+  # concurrent sweeps would still bill Bedrock for the same research twice.
+  reserved_concurrent_executions = 1
+
   environment {
     variables = {
+      # Shared with the reading service: reports, the demand ledger and run
+      # status live in DynamoDB, so what this Lambda researches is what a
+      # farmer's page reads (backend/agents/kv.py).
       AGROSENSE_REPORTS_TABLE = var.reports_table
       AGROSENSE_DATA_DIR      = "/tmp/agrosense"
       AWS_REGION_NAME         = var.region
       # Secrets are read at runtime through the SDK rather than injected as
       # env vars — a Lambda's environment is visible in the console, and a
       # `terraform plan` diff would print any value set here.
-      AGROSENSE_SECRET_PREFIX = "${var.name_prefix}/"
+      AGROSENSE_SECRET_PREFIX     = var.secret_prefix
+      AGROSENSE_LLM_PROVIDER      = "bedrock"
+      AGROSENSE_BEDROCK_REGION    = var.region
+      AGROSENSE_BEDROCK_MODEL     = var.bedrock_model_id
+      AGROSENSE_AGENTS_ENABLED    = "1"
+      AGROSENSE_AGENTS_BATCH_SIZE = tostring(var.batch_size)
     }
   }
 

@@ -38,6 +38,53 @@ _ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_ROOT / ".env.local")
 load_dotenv(_ROOT / ".env")
 
+
+#: Secrets Manager name (under `AGROSENSE_SECRET_PREFIX`) -> environment variable.
+#: Only the optional tool keys. The required ones (Clerk, the service key) are
+#: injected by ECS, so a missing one stops the task at boot — the right failure.
+_OPTIONAL_SECRETS = {
+    "youtube-api-key": "YOUTUBE_API_KEY",
+    "data-gov-in-api-key": "DATA_GOV_IN_API_KEY",
+}
+
+
+def _load_optional_secrets() -> None:
+    """Read the optional tool keys from Secrets Manager, before anything reads them.
+
+    On AWS only (`AGROSENSE_SECRET_PREFIX` set). Fetched here rather than
+    injected by ECS because ECS refuses to start a task whose secret has never
+    been given a value — and these two are optional: without them the YouTube
+    and mandi-price tools run in their keyless mode. So a missing, empty or
+    unreadable secret is logged and skipped, never fatal. A value already in the
+    environment wins.
+    """
+    prefix = os.getenv("AGROSENSE_SECRET_PREFIX", "").strip()
+    if not prefix:
+        return
+    import logging
+
+    log = logging.getLogger("agrosense.config")
+    try:
+        import boto3
+
+        client = boto3.client("secretsmanager")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("optional secrets: no client (%s)", exc)
+        return
+    for name, env in _OPTIONAL_SECRETS.items():
+        if os.getenv(env, "").strip():
+            continue
+        try:
+            value = client.get_secret_value(SecretId=f"{prefix}{name}").get("SecretString", "")
+        except Exception as exc:  # noqa: BLE001 — absent, or never given a value
+            log.info("optional secret %s unavailable (%s)", name, type(exc).__name__)
+            continue
+        if value.strip():
+            os.environ[env] = value.strip()
+
+
+_load_optional_secrets()
+
 """
 Configuration for the reading service.
 
@@ -130,13 +177,89 @@ OLLAMA_TEMPERATURE = float(os.getenv("AGROSENSE_OLLAMA_TEMPERATURE", "0.2"))
 #
 # Four agents (Planner -> Research -> Creator -> Reviewer) that gather current
 # Indian information — schemes, techniques, government prices, video — for the
-# crops, soils and fertilizers the models actually predicted. See AGENTS_PLAN.md.
+# crops, soils and fertilizers the models actually predicted. See research and plan/AGENTS_PLAN.md.
 #
-# The whole subsystem is a no-op without an OpenAI key, which is deliberate: a
-# fresh checkout should run the card reader and the three models without
-# needing an account anywhere.
+# The whole subsystem is a no-op without model credentials — AWS for Bedrock
+# (the default), or an OpenAI key if that provider is chosen — which is
+# deliberate: a fresh checkout should run the card reader and the three models
+# without needing an account anywhere.
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 AGENTS_MODEL = os.getenv("AGROSENSE_AGENTS_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+
+# --- Language models: Amazon Bedrock -------------------------------------
+#
+# Every model call in the product — the four research agents, the farmer chat,
+# and the answer step of document Q&A — goes to Amazon Nova Pro on Bedrock by
+# default, so the whole stack runs on AWS under one IAM role with no third-party
+# key to rotate. `openai` is kept as an opt-in for the agents only.
+#
+# The model id is a cross-region inference profile, not a bare model id. Nova
+# Pro is served in ap-south-1 only through the `apac.` profile (Bedrock lists it
+# as INFERENCE_PROFILE-only there); a bare `amazon.nova-pro-v1:0` is refused.
+LLM_PROVIDER = os.getenv("AGROSENSE_LLM_PROVIDER", "bedrock").strip().lower() or "bedrock"
+BEDROCK_REGION = (
+    os.getenv("AGROSENSE_BEDROCK_REGION")
+    or os.getenv("AWS_REGION")
+    or os.getenv("AWS_DEFAULT_REGION")
+    or "ap-south-1"
+).strip()
+
+
+def _inference_profile_prefix(region: str) -> str:
+    """The cross-region profile family that serves Nova from `region`.
+
+    A profile only works from a source region inside its family: `apac.` from
+    ap-south-1, `us.` from us-east-1. Choosing it from the region means the
+    default is right wherever this runs — ap-south-1 on AWS, and whatever the
+    developer's `.env` says locally — instead of failing with an opaque
+    ValidationException the first time a region and a prefix disagree.
+    """
+    if region.startswith("us-"):
+        return "us"
+    if region.startswith("eu-"):
+        return "eu"
+    return "apac"
+
+
+BEDROCK_MODEL_ID = (
+    os.getenv("AGROSENSE_BEDROCK_MODEL", "").strip()
+    or f"{_inference_profile_prefix(BEDROCK_REGION)}.amazon.nova-pro-v1:0"
+)
+#: The chat may run a different model from the agents; by default it is the same.
+BEDROCK_CHAT_MODEL_ID = os.getenv("AGROSENSE_BEDROCK_CHAT_MODEL", "").strip() or BEDROCK_MODEL_ID
+#: Optional Bedrock Guardrail applied to the farmer chat (content filters,
+#: denied topics, PII masking). Terraform creates one and passes its id here.
+BEDROCK_GUARDRAIL_ID = os.getenv("AGROSENSE_BEDROCK_GUARDRAIL_ID", "").strip()
+BEDROCK_GUARDRAIL_VERSION = os.getenv("AGROSENSE_BEDROCK_GUARDRAIL_VERSION", "DRAFT").strip() or "DRAFT"
+
+
+def _aws_credentials_hint() -> bool:
+    """Whether AWS credentials are plausibly available, without a network call.
+
+    Resolving credentials for real can block on the instance-metadata endpoint
+    for seconds off AWS, which is not something to do at import time. These are
+    the places boto3 would find them: keys or a profile in the environment, a
+    Bedrock API key, the ECS task role, Lambda, web identity, or the CLI's files.
+    """
+    env_markers = (
+        "AWS_ACCESS_KEY_ID",
+        "AWS_PROFILE",
+        "AWS_BEARER_TOKEN_BEDROCK",
+        "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+        "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+        "AWS_LAMBDA_FUNCTION_NAME",
+        "AWS_WEB_IDENTITY_TOKEN_FILE",
+    )
+    if any(os.getenv(name) for name in env_markers):
+        return True
+    home = Path.home() / ".aws"
+    return (home / "credentials").exists() or (home / "config").exists()
+
+
+#: Whether a model can be called at all, for whichever provider is selected.
+LLM_CONFIGURED = (
+    _aws_credentials_hint() if LLM_PROVIDER == "bedrock" else bool(OPENAI_API_KEY)
+)
 
 #: Optional. YouTube Data API v3 (free tier). With it the research agent's
 #: `search_youtube` tool returns real videos — title, channel, thumbnail;
@@ -147,7 +270,7 @@ YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "").strip()
 
 _agents_enabled_raw = os.getenv("AGROSENSE_AGENTS_ENABLED")
 AGENTS_ENABLED = (
-    bool(OPENAI_API_KEY)
+    LLM_CONFIGURED
     if _agents_enabled_raw is None
     else _agents_enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
 )
@@ -166,6 +289,13 @@ AGENTS_BATCH_SIZE = int(os.getenv("AGROSENSE_AGENTS_BATCH_SIZE", "6"))
 AGENTS_SWEEP_MINUTES = float(os.getenv("AGROSENSE_AGENTS_SWEEP_MINUTES", "30"))
 
 AGENTS_RUN_ON_STARTUP_IF_STALE = _flag("AGROSENSE_AGENTS_RUN_ON_STARTUP", True)
+
+#: Whether this process runs the timed sweep itself. On by default, which is
+#: what a single machine wants. Off on AWS: there EventBridge fires the sweep in
+#: Lambda, and a second sweep inside the Fargate task would research every topic
+#: twice and bill Bedrock twice. On-demand research after a prediction is not
+#: affected — that is the request path, and it stays in the service.
+AGENTS_IN_PROCESS_SWEEP = _flag("AGROSENSE_AGENTS_SCHEDULER", True)
 
 #: How many on-demand research runs may be in flight at once.
 #:
@@ -200,6 +330,17 @@ DATA_GOV_IN_API_KEY = os.getenv("DATA_GOV_IN_API_KEY", "").strip()
 # because the alternative is every card owned by one shared identity.
 CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY", "").strip()
 CLERK_ENABLED = bool(CLERK_SECRET_KEY)
+
+#: The sites allowed to present a session token here — matched against the
+#: token's `azp` claim, the origin Clerk issued it to. A token minted for some
+#: other site on the same Clerk instance is refused even though its signature
+#: is valid. Comma-separated; Terraform sets it to the deployed site and `.env`
+#: to localhost. Unset means not checked.
+CLERK_AUTHORIZED_PARTIES = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CLERK_AUTHORIZED_PARTIES", "").split(",")
+    if origin.strip()
+]
 
 #: This product is Marathi-first and its reference card is from Palghar
 #: district, so mandi prices default to Maharashtra.

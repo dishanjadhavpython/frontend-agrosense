@@ -13,7 +13,7 @@ import { cn } from "@/lib/cn";
  * STAGED FOR THE DASHBOARD — not mounted on any route yet.
  *
  * This was the landing page's plots section. It came off the public site, but
- * the composition is exactly what PLAN.md §7 calls for on the app dashboard:
+ * the composition is exactly what research and plan/PLAN.md §7 calls for on the app dashboard:
  * the aerial as canvas, the dashed boundary, stress clipped inside it, and a
  * readout panel breaking the photo's edge. Kept whole so step 6 starts from
  * working code rather than from the wireframe.
@@ -69,7 +69,7 @@ const PLOTS: Plot[] = [
  * lens rather than something happening in the crop. The viewBox is exactly
  * 16:9, matching the container, so nothing distorts and the dashes stay even.
  *
- * Painted for now; see PLAN.md §10 on whether real NDVI data is available.
+ * Painted for now; see research and plan/PLAN.md §10 on whether real NDVI data is available.
  */
 function PlotOverlay() {
   const boundary = "M30 20 L98 14 L112 50 L46 68 Z";

@@ -21,8 +21,7 @@ locals {
   # S3 bucket names are globally unique across every AWS account. A suffix is
   # not decoration; without it `terraform apply` fails for the second person
   # who tries this.
-  uploads_bucket  = "${var.name_prefix}-uploads-${random_id.suffix.hex}"
-  frontend_bucket = "${var.name_prefix}-frontend-${random_id.suffix.hex}"
+  uploads_bucket = "${var.name_prefix}-uploads-${random_id.suffix.hex}"
 }
 
 # ---- Uploaded cards ------------------------------------------------------
@@ -109,32 +108,6 @@ resource "aws_s3_bucket_policy" "uploads_tls_only" {
       }
     }]
   })
-}
-
-# ---- The Next.js static assets ------------------------------------------
-
-resource "aws_s3_bucket" "frontend" {
-  bucket = local.frontend_bucket
-}
-
-resource "aws_s3_bucket_public_access_block" "frontend" {
-  bucket = aws_s3_bucket.frontend.id
-  # Also fully blocked. CloudFront reaches it through Origin Access Control,
-  # not through a public bucket — a public S3 website endpoint would bypass
-  # the WAF entirely.
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "frontend" {
-  bucket = aws_s3_bucket.frontend.id
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
 }
 
 # ---- DynamoDB ------------------------------------------------------------

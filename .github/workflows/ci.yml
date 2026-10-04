@@ -1,0 +1,73 @@
+# Checks that need nothing but the repository: no AWS access, no secrets, so
+# they run the same on a pull request from anyone. The tests that need the
+# trained models run in deploy.yml, where the pipeline can fetch them.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web app — lint, types, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npx eslint
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      # The same three steps as Dockerfile.web. `check:examiner` is left out on
+      # purpose: it compares the examiner pages with model files that are not
+      # in this repository.
+      - name: Build
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: |
+          npm run check:csp-hash
+          npm run check:ontology
+          npx next build
+
+  terraform:
+    name: Terraform — format, validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.6
+
+      - name: Format
+        working-directory: terraform
+        run: terraform fmt -recursive -check
+
+      - name: Validate (main)
+        working-directory: terraform
+        run: terraform init -backend=false -input=false && terraform validate
+
+      - name: Validate (bootstrap)
+        working-directory: terraform/bootstrap
+        run: terraform init -backend=false -input=false && terraform validate

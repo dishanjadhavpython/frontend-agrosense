@@ -6,6 +6,7 @@ import { useLang } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { SOILS } from "@/data/soils";
 import { useLiveCrop, useLiveFert, useLiveSoil } from "@/lib/livePick";
+import { isUnsureSoilRead, unsureSoilReadNote } from "@/lib/soilConfidence";
 
 /**
  * "This is yours" — the band that turns a reference page into a result.
@@ -113,10 +114,9 @@ export function LiveSoilBand({ soilKey }: { soilKey: string }) {
         {mr
           ? "तुम्ही दिलेल्या फोटोवरून ही माती ओळखली आहे."
           : "Identified from the photograph you sent."}
-        {/* The runner-up travels with the answer. A classifier trained on ~28
-            real photographs of some of these soils is not entitled to state
-            one answer and stop talking — the same rule the prediction board
-            follows. */}
+        {/* The runner-up travels with the answer. A classifier right about
+            three times in four is not entitled to state one answer and stop
+            talking — the same rule the prediction board follows. */}
         {runnerUpSoil ? (
           <>
             {" "}
@@ -126,6 +126,11 @@ export function LiveSoilBand({ soilKey }: { soilKey: string }) {
           </>
         ) : null}
       </p>
+      {isUnsureSoilRead(live.confidence) ? (
+        <p className="mt-2 text-[0.95rem] font-semibold text-haldi-ink">
+          {mr ? unsureSoilReadNote.mr : unsureSoilReadNote.en}
+        </p>
+      ) : null}
     </Band>
   );
 }

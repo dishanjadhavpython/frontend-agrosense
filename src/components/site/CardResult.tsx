@@ -11,7 +11,7 @@ import { NutrientChart } from "./NutrientChart";
  * What actually came off the card.
  *
  * This replaces the fixed sample profile that sat here while extraction was
- * unwired, and with it the standing "Sample figures" notice that PLAN.md §6
+ * unwired, and with it the standing "Sample figures" notice that research and plan/PLAN.md §6
  * said must not be removed until reading was real. It is not deleted so much
  * as promoted: the amber block is still here, but it now carries provenance —
  * which file, how many of twelve were found, and whether the numbers came out

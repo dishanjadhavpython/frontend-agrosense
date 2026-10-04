@@ -10,7 +10,7 @@ import {
 } from "@/data/soilReading";
 
 /**
- * The signature (PLAN.md §4).
+ * The signature (research and plan/PLAN.md §4).
  *
  * Rendered as markup rather than a photograph: the marks have to land on
  * specific values, and anchoring SVG to a photo breaks at every viewport.

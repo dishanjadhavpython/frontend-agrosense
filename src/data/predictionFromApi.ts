@@ -70,6 +70,11 @@ export function soilCardFrom(soil: PredictedSoil): SoilCard | null {
   };
 }
 
+function cropKeyFrom(name: string | undefined): string | null {
+  const key = name?.trim().toLowerCase();
+  return key && has(CROPS, key) ? key : null;
+}
+
 export function cropCardsFrom(crops: PredictedCrop[]): CropCard[] {
   return crops
     .map((crop) => ({
@@ -99,6 +104,11 @@ export type LivePrediction = {
   soil: SoilCard | null;
   crops: CropCard[];
   fertilizers: FertCard[];
+  /**
+   * The crop key the fertilizers were scored for, when the site has a card for
+   * it. Every fertilizer in one prediction serves this one crop.
+   */
+  fertilizersFor: string | null;
   /** True when the card's readings themselves came from OCR. */
   needsReview: boolean;
   /**
@@ -122,6 +132,7 @@ export function fromApi(result: PredictionResult): LivePrediction {
     soil: soilCardFrom(result.soil),
     crops: cropCardsFrom(result.crops),
     fertilizers: fertCardsFrom(result.fertilizers),
+    fertilizersFor: cropKeyFrom(result.fertilizers_for),
     needsReview: result.needs_review,
     outOfRange: result.out_of_range ?? [],
     nutrientStatus: result.nutrient_status ?? { N: null, P: null, K: null },

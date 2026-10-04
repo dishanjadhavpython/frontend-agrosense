@@ -31,7 +31,7 @@ NEEDS AGRONOMIST REVIEW. Compiled from general Indian soil-suitability
 guidance (ICAR crop-soil suitability, state agriculture department crop
 calendars). It is a reasonable first pass by a non-agronomist and should be
 checked before anyone farms against it — the same standing flag the Marathi
-copy carries in PLAN.md §10.
+copy carries in research and plan/PLAN.md §10.
 ────────────────────────────────────────────────────────────────────────────
 """
 

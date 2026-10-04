@@ -8,7 +8,7 @@ import { Statement } from "@/components/ui/Type";
 import { SoilCard, T_HIGHLIGHT, T_CIRCLE } from "./SoilCard";
 
 /**
- * The hero is the signature, not a warm-up for it (PLAN.md §4).
+ * The hero is the signature, not a warm-up for it (research and plan/PLAN.md §4).
  *
  * The whole proposition is "you're holding a document you can't act on; we
  * read it for you" — so the page opens with the document, and reads it while

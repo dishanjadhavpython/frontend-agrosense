@@ -24,6 +24,13 @@ type Appearance = NonNullable<ComponentProps<typeof ClerkProvider>["appearance"]
  * runtime, so the failure mode is an unstyled box, not an error.
  */
 export const clerkAppearance: Appearance = {
+  // Google and Apple are the way most farmers will sign in, so they sit first,
+  // full width and labelled — not as two small logos above the email form.
+  // (`options` is Clerk 7's name for what older guides call `layout`.)
+  options: {
+    socialButtonsPlacement: "top",
+    socialButtonsVariant: "blockButton",
+  },
   variables: {
     colorPrimary: "var(--color-ink)",
     colorPrimaryForeground: "var(--color-paper)",
@@ -50,6 +57,7 @@ export const clerkAppearance: Appearance = {
     formButtonPrimary:
       "min-h-12 normal-case text-[15px] font-semibold hover:bg-leaf-deep",
     formFieldInput: "min-h-12",
+    socialButtonsBlockButton: "min-h-12",
     footerActionLink: "text-leaf hover:text-leaf-deep",
   },
 };

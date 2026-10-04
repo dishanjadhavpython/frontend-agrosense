@@ -97,3 +97,9 @@ export function clockTime(iso: string) {
 export function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
+
+/** "SANGOLE" -> "Sangole". The recommend engine's district/taluka names come
+ *  back upper-case (they're join keys); this is only ever for display. */
+export function title(s: string) {
+  return s.replace(/\w\S*/g, (w) => w[0] + w.slice(1).toLowerCase());
+}
