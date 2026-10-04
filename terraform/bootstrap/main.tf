@@ -52,6 +52,18 @@ variable "github_repository" {
   default     = "dishanjadhavpython/frontend-agrosense"
 }
 
+variable "github_subject_prefix" {
+  description = <<-EOT
+    The repository part of GitHub's OIDC `sub` claim. This repository issues
+    immutable subjects — owner and repository names with their numeric ids —
+    so a renamed or re-created repository with the same name cannot assume
+    the role. Read it with:
+      gh api repos/OWNER/REPO/actions/oidc/customization/sub
+  EOT
+  type        = string
+  default     = "repo:dishanjadhavpython@165149775/frontend-agrosense@1325676094"
+}
+
 variable "github_environment" {
   description = "The GitHub environment the deploy job runs in. Only that job can assume the role."
   type        = string
@@ -176,7 +188,7 @@ resource "aws_iam_role" "github_deploy" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:environment:${var.github_environment}"
+          "token.actions.githubusercontent.com:sub" = "${var.github_subject_prefix}:environment:${var.github_environment}"
         }
       }
     }]
