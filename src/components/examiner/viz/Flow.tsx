@@ -8,7 +8,7 @@ import { DIA_FILL, DIA_LINE, TONE, WASH, q } from "./geom";
  * one SVG overlay behind them.
  *
  * Hand-written SVG was the obvious approach and is the wrong one at this width.
- * `site/recommend/LiebigStaves.tsx` already records the failure in this
+ * The retired `site/recommend/LiebigStaves.tsx` recorded the failure in this
  * codebase: a 400-unit viewBox stretched across a 1200px panel rendered its
  * 10-unit labels at 30px — "the chart shouted". Nodes here read "FastAPI
  * reading service :8000"; inside a scaled viewBox on a phone those land at

@@ -1,56 +1,41 @@
 "use client";
 
 import Image from "next/image";
-import { AlertTriangle, Check, HelpCircle } from "lucide-react";
+import type { ComponentType } from "react";
+import { AlertTriangle, Camera, Check, Droplets, HelpCircle, Layers, Map as MapIcon, Ruler } from "lucide-react";
 import { photo } from "@/lib/assets";
 import { cn } from "@/lib/cn";
 import { SOILS } from "@/data/soils";
 import { compareSoil, type SoilReadResult } from "@/lib/soilTypes";
+import { isUnsureSoilRead } from "@/lib/soilConfidence";
 import type { RecommendContext } from "@/lib/recommendTypes";
 
 /**
- * The photograph's answer, weighed against the survey's.
+ * The photograph's answer, weighed against the government soil map's.
  *
- * **The photograph is an input now.** It used to be a side-by-side comparison
- * and nothing more — the engine took no image, so this panel could only show a
- * disagreement and leave it standing. The engine now fuses the two
+ * Said as two tiles and one sentence. This panel used to carry the whole
+ * argument in prose — the classifier's accuracy on photographs it was not
+ * trained on, which soils it reads worst, which factors fusion may move — and
+ * a farmer had to read a paragraph to learn three things: what the photo
+ * says, what the map says, and what to do when they disagree. Those three are
+ * what is left, plus the survey's own description of the land in words a
+ * farmer would use for it.
+ *
+ * **The photograph is an input.** The engine fuses it with the survey
  * (`src/rules/soil_fusion.py`): the survey's area shares are the prior, the
- * classifier's measured confusion matrix is the likelihood, and the result can
- * change which crops are ranked.
+ * classifier's measured confusion matrix the likelihood, and the result can
+ * change which crops are ranked. What it can never move is depth, drainage or
+ * salinity — those come from profile pits, not from a picture of the surface —
+ * so a photograph can add a caution and never remove one.
  *
- * What it still cannot do is move a hard factor. Fusion touches texture and
- * available water only; depth, drainage and salinity keep the surveyed value,
- * so a photograph can add a constraint and can never lift a safety veto. The
- * engine's M5 test asserts exactly that — every class at maximum confidence,
- * against every sampled taluka.
+ * **The photograph is also the less trustworthy half.** A disagreement is at
+ * least as likely to be the classifier as the field, so the sentence says
+ * "look at the ground yourself" rather than implying the photo caught
+ * something the survey missed. Nothing here picks a winner.
  *
- * A disagreement is still worth showing. The taluka's mapped type is an
- * average over a handful of profile pits, and 66–78% of a taluka is its
- * dominant soil — so a farmer's own field differing from the map is ordinary,
- * and worth knowing before they sow rather than after.
- *
- * ── But the photograph is the less trustworthy half ────────────────────────
- *
- * Measured, not assumed. Fed the four reference photographs in
- * `public/img/soils/` — which `assets.ts` records as coming from the
- * classifier's *own training sets* — it returned:
- *
- *   black.jpg     -> black     99.8%   correct
- *   laterite.jpg  -> red       50.7%   wrong (laterite not in the top three)
- *   red.jpg       -> alluvial  66.0%   wrong (red second, 33.9%)
- *   alluvial.jpg  -> yellow    91.1%   wrong (alluvial third, 3.2%)
- *
- * One of four, on its own training data. The model is EfficientNet-B0 over
- * roughly 28 photographs per class, and it shows.
- *
- * So a disagreement here is at least as likely to be the classifier as the
- * field, and the copy below says exactly that rather than implying the
- * photograph caught something the survey missed. The runner-up is shown
- * alongside, because "red 50.7%, or black 24.8%" is a truer description of
- * what the model actually knows than a single confident-looking noun.
- *
- * A disagreement is shown and left standing. Nothing here picks a winner,
- * silently reconciles the two, or feeds either back into the advice.
+ * Runner-up guesses are shown only when they carry weight. "or possibly: peat
+ * 0%, red 0%" was the honest top-three and said nothing; a second guess at a
+ * tenth or more is a materially different answer and belongs on the tile.
  */
 
 const SURVEY_MR: Record<string, string> = {
@@ -63,6 +48,139 @@ const SURVEY_MR: Record<string, string> = {
 };
 
 const surveyName = (t: string, mr: boolean) => (mr ? SURVEY_MR[t] ?? t : t);
+
+type Words = { mr: string; en: string };
+
+/** The survey's vocabulary, with what each term means for a crop. */
+const TEXTURE: Record<string, Words & { mean: Words }> = {
+  Clayey: {
+    mr: "भारी, चिकण", en: "Clayey",
+    mean: { mr: "पाणी व अन्नद्रव्यं धरून ठेवते; कोरडी झाली की भेगा पडतात", en: "holds water and nutrients well; cracks when dry" },
+  },
+  "Clayey-skeletal": {
+    mr: "चिकण, खडेयुक्त", en: "Clayey, with gravel",
+    mean: { mr: "खड्यांमुळे साध्या चिकण मातीपेक्षा कमी पाणी धरते", en: "the stones mean it holds less water than plain clay" },
+  },
+  Loamy: {
+    mr: "पोयटा (मध्यम)", en: "Loamy",
+    mean: { mr: "मशागतीला सोपी, पाणी चांगलं धरते", en: "easy to work, holds water well" },
+  },
+  "Loamy-skeletal": {
+    mr: "पोयटा, खडेयुक्त", en: "Loamy, with gravel",
+    mean: { mr: "खड्यांमुळे लवकर कोरडी होते", en: "the stones make it dry out faster" },
+  },
+};
+
+const DEPTH: Record<string, Words & { mean: Words }> = {
+  "Very shallow": {
+    mr: "खूप उथळ", en: "Very shallow",
+    mean: { mr: "२५ सेंमीपेक्षा कमी — फक्त कमी मुळांची, कमी कालावधीची पिकं", en: "under 25 cm — only short, shallow-rooted crops" },
+  },
+  Shallow: {
+    mr: "उथळ", en: "Shallow",
+    mean: { mr: "२५–५० सेंमी — मुळं खोल जात नाहीत, जमीन लवकर कोरडी होते", en: "25–50 cm — roots cannot go deep, and it dries out fast" },
+  },
+  "Moderately deep": {
+    mr: "मध्यम खोल", en: "Moderately deep",
+    mean: { mr: "५०–१०० सेंमी — बहुतेक पिकांना पुरेशी", en: "50–100 cm — enough for most field crops" },
+  },
+  Deep: {
+    mr: "खोल", en: "Deep",
+    mean: { mr: "१–१.५ मीटर — मुळांसाठी भरपूर ओलावा", en: "1–1.5 m — plenty of moisture for the roots" },
+  },
+  "Very deep": {
+    mr: "खूप खोल", en: "Very deep",
+    mean: { mr: "१.५ मीटरपेक्षा जास्त — खोल मुळांच्या पिकांनाही चालते", en: "over 1.5 m — suits even deep-rooted crops" },
+  },
+};
+
+const DRAINAGE: Record<string, Words & { mean: Words }> = {
+  "Poorly drained": {
+    mr: "निचरा कमी", en: "Poorly drained",
+    mean: { mr: "पावसानंतर पाणी बराच काळ साचतं", en: "water stands for a long time after rain" },
+  },
+  "Imperfectly drained": {
+    mr: "निचरा उशिरा", en: "Slow to drain",
+    mean: { mr: "पाणी काही काळ साचू शकतं", en: "water can stand for a while" },
+  },
+  "Moderately well drained": {
+    mr: "मध्यम निचरा", en: "Moderately well drained",
+    mean: { mr: "थोडा वेळ ओली राहते, मग निचरा होतो", en: "stays wet briefly, then drains" },
+  },
+  "Well drained": {
+    mr: "चांगला निचरा", en: "Well drained",
+    mean: { mr: "पाणी साचत नाही — बहुतेक पिकांना योग्य", en: "water does not stand — good for most crops" },
+  },
+  "Somewhat excessively drained": {
+    mr: "निचरा जलद", en: "Drains fast",
+    mean: { mr: "पाणी लवकर निघून जातं, ओलावा कमी टिकतो", en: "water leaves quickly and little moisture stays" },
+  },
+  "Excessively drained": {
+    mr: "निचरा खूप जलद", en: "Drains very fast",
+    mean: { mr: "पाणी लगेच जमिनीतून निघून जातं; वारंवार पाणी द्यावं लागतं", en: "water runs straight through; it needs frequent watering" },
+  },
+};
+
+/** The classifier's calibrated confidence, in a word. */
+function sureWord(percent: number, mr: boolean): string {
+  if (isUnsureSoilRead(percent)) return mr ? "खात्री कमी" : "unsure";
+  if (percent >= 90) return mr ? "जवळजवळ खात्री" : "very sure";
+  return mr ? "बऱ्यापैकी खात्री" : "fairly sure";
+}
+
+function Tile({
+  icon: Icon,
+  label,
+  children,
+  media,
+}: {
+  icon: ComponentType<{ className?: string; strokeWidth?: number }>;
+  label: string;
+  children: React.ReactNode;
+  media?: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-3.5 rounded-[18px] border border-line bg-surface p-3.5">
+      {media ?? (
+        <span className="grid size-16 shrink-0 place-items-center rounded-[14px] bg-leaf-wash text-leaf">
+          <Icon className="size-7" strokeWidth={1.6} />
+        </span>
+      )}
+      <div className="min-w-0">
+        <p className="flex items-center gap-1.5 text-[12px] font-medium text-ink-mute">
+          <Icon className="size-3.5 shrink-0" strokeWidth={2} />
+          {label}
+        </p>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Fact({
+  icon: Icon,
+  label,
+  value,
+  mean,
+}: {
+  icon: ComponentType<{ className?: string; strokeWidth?: number }>;
+  label: string;
+  value: string;
+  mean?: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="grid size-9 shrink-0 place-items-center rounded-[11px] bg-surface text-ink-soft ring-1 ring-line">
+        <Icon className="size-4" strokeWidth={1.9} />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[12px] text-ink-mute">{label}</p>
+        <p className="text-[14.5px] font-semibold text-ink">{value}</p>
+        {mean ? <p className="mt-0.5 text-[12.5px] leading-snug text-ink-soft">{mean}</p> : null}
+      </div>
+    </div>
+  );
+}
 
 export function SoilAgreement({
   soil,
@@ -80,210 +198,203 @@ export function SoilAgreement({
   const verdict = surveyed
     ? compareSoil(soil.key, surveyed.soil_type, surveyed.soil_type_secondary)
     : null;
+  const fusion = context?.soil_fusion ?? null;
+  const confidence = Math.round(soil.confidence);
+
+  // Second guesses that carry weight, never the zeroes.
+  const alternatives = soil.alternatives
+    .filter((a) => a.confidence >= 10)
+    .slice(0, 2)
+    .map((a) => {
+      const alt = SOILS.find((s) => s.key === a.key);
+      return `${alt ? (mr ? alt.mr : alt.en) : a.key} ${Math.round(a.confidence)}%`;
+    });
 
   const tone =
     verdict?.verdict === "agrees" ? "ok" : verdict?.verdict === "differs" ? "warn" : "quiet";
-  const frame = {
-    ok: "border-leaf/40 bg-leaf-wash",
-    warn: "border-haldi/50 bg-haldi-wash",
-    quiet: "border-line bg-surface",
-  }[tone];
+
+  const texture = surveyed?.texture ? TEXTURE[surveyed.texture] : undefined;
+  const depth = surveyed?.depth ? DEPTH[surveyed.depth] : undefined;
+  const drainage = surveyed?.drainage ? DRAINAGE[surveyed.drainage] : undefined;
 
   return (
-    <section className={cn("rounded-[var(--radius-card)] border p-5", frame)}>
-      <div className="flex flex-wrap items-start gap-4">
-        {/* The photograph's class, as the site draws every soil. Slot held
-            whether or not the file has landed, same rule as the crop cards. */}
-        <div className="relative size-20 shrink-0 overflow-hidden rounded-[14px] bg-night">
-          {src ? (
-            <Image
-              src={src}
-              alt={card ? (mr ? card.mr : card.en) : soil.key}
-              fill
-              sizes="80px"
-              className="object-cover"
-            />
-          ) : (
-            <div
-              className="field-rows absolute inset-0"
-              style={{
-                backgroundImage:
-                  "linear-gradient(160deg, var(--color-night-rise) 0%, var(--color-night) 100%)",
-              }}
-              aria-hidden
-            />
-          )}
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <p className="eyebrow text-ink-mute">
-            {mr ? "फोटोवरून ओळखलेली माती" : "The soil in your photo"}
-          </p>
-          <p className="mt-1 text-[1.15rem] font-semibold text-ink font-[family-name:var(--font-display)]">
-            {card ? (mr ? card.mr : card.en) : soil.key}
-            <span className="tnum ml-2 text-[13px] font-normal text-ink-mute">
-              {Math.round(soil.confidence)}%
-            </span>
-          </p>
-
-          {/* The runner-up, when the two disagree. A single noun with a
-              percentage reads more certain than this model has earned; the
-              second guess is part of the honest answer. */}
-          {verdict?.verdict === "differs" && soil.alternatives.length ? (
-            <p className="mt-1 text-[13px] text-ink-mute">
-              {mr ? "किंवा कदाचित: " : "or possibly: "}
-              {soil.alternatives.slice(0, 2).map((a, i) => {
-                const alt = SOILS.find((s) => s.key === a.key);
-                return (
-                  <span key={a.key}>
-                    {i > 0 ? ", " : ""}
-                    {alt ? (mr ? alt.mr : alt.en) : a.key}{" "}
-                    <span className="tnum">{Math.round(a.confidence)}%</span>
-                  </span>
-                );
-              })}
-            </p>
-          ) : null}
-
-          {surveyed?.soil_type ? (
-            <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft">
-              {mr ? "नकाशाप्रमाणे इथली माती: " : "The survey maps this taluka as "}
-              <strong className="font-semibold text-ink">
-                {surveyName(surveyed.soil_type, mr)}
-              </strong>
-              {surveyed.share_pct != null ? (
-                <span className="tnum text-ink-mute"> ({surveyed.share_pct}%)</span>
-              ) : null}
-              {surveyed.soil_type_secondary ? (
-                <>
-                  {mr ? ", दुय्यम " : ", with "}
-                  {surveyName(surveyed.soil_type_secondary, mr)}
-                  {mr ? "" : " alongside"}
-                </>
-              ) : null}
-              .
-            </p>
-          ) : null}
-        </div>
+    <section
+      className="rounded-[var(--radius-card)] border border-line bg-paper p-5 sm:p-6"
+      style={{ boxShadow: "var(--shadow-card)" }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h3 className="text-[1.15rem] font-semibold text-ink font-[family-name:var(--font-display)]">
+          {mr ? "तुमची माती" : "Your soil"}
+        </h3>
+        {verdict ? (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[13px] font-semibold",
+              tone === "ok" && "bg-leaf-wash text-leaf-deep",
+              tone === "warn" && "bg-haldi-wash text-haldi-ink",
+              tone === "quiet" && "bg-surface text-ink-mute ring-1 ring-line",
+            )}
+          >
+            {tone === "ok" ? (
+              <Check className="size-4" strokeWidth={2.2} aria-hidden />
+            ) : tone === "warn" ? (
+              <AlertTriangle className="size-4" strokeWidth={2} aria-hidden />
+            ) : (
+              <HelpCircle className="size-4" strokeWidth={2} aria-hidden />
+            )}
+            {tone === "ok"
+              ? mr ? "फोटो आणि नकाशा जुळतात" : "Photo and map agree"
+              : tone === "warn"
+                ? mr ? "फोटो आणि नकाशा जुळत नाहीत" : "Photo and map disagree"
+                : mr ? "तुलना करता येत नाही" : "Cannot be compared"}
+          </span>
+        ) : null}
       </div>
 
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <Tile
+          icon={Camera}
+          label={mr ? "तुमच्या फोटोवरून" : "From your photo"}
+          media={
+            <div className="relative size-16 shrink-0 overflow-hidden rounded-[14px] bg-night">
+              {src ? (
+                <Image
+                  src={src}
+                  alt={card ? (mr ? card.mr : card.en) : soil.key}
+                  fill
+                  sizes="64px"
+                  className="object-cover"
+                />
+              ) : (
+                <div
+                  className="field-rows absolute inset-0"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(160deg, var(--color-night-rise) 0%, var(--color-night) 100%)",
+                  }}
+                  aria-hidden
+                />
+              )}
+            </div>
+          }
+        >
+          <p className="truncate text-[1.1rem] font-semibold text-ink">
+            {card ? (mr ? card.mr : card.en) : soil.key}
+          </p>
+          <p className={cn("tnum text-[13px]", isUnsureSoilRead(confidence) ? "font-semibold text-haldi-ink" : "text-ink-soft")}>
+            {sureWord(confidence, mr)} · {confidence}%
+          </p>
+          {alternatives.length ? (
+            <p className="tnum truncate text-[12px] text-ink-mute">
+              {mr ? "किंवा: " : "or: "}
+              {alternatives.join(", ")}
+            </p>
+          ) : null}
+        </Tile>
+
+        <Tile icon={MapIcon} label={mr ? "सरकारी माती नकाशावरून" : "From the government soil map"}>
+          {surveyed?.soil_type ? (
+            <>
+              <p className="truncate text-[1.1rem] font-semibold text-ink">
+                {surveyName(surveyed.soil_type, mr)}
+              </p>
+              <p className="tnum text-[13px] text-ink-soft">
+                {surveyed.share_pct != null
+                  ? mr
+                    ? `तालुक्याचा ${Math.round(surveyed.share_pct)}% भाग`
+                    : `${Math.round(surveyed.share_pct)}% of this taluka`
+                  : mr ? "या तालुक्यात मुख्यतः" : "mostly, in this taluka"}
+              </p>
+              {surveyed.soil_type_secondary ? (
+                <p className="truncate text-[12px] text-ink-mute">
+                  {mr ? "बाकी: " : "also: "}
+                  {surveyName(surveyed.soil_type_secondary, mr)}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-[14px] text-ink-soft">
+              {mr ? "तुमचं ठिकाण निवडल्यावर दिसेल" : "Shown once you choose your taluka"}
+            </p>
+          )}
+        </Tile>
+      </div>
+
+      {/* What to do, in one sentence. */}
       {verdict ? (
         <p
           className={cn(
-            "mt-4 flex items-start gap-2.5 text-[14px] leading-relaxed",
-            verdict.verdict === "agrees" && "text-leaf-deep",
-            verdict.verdict === "differs" && "text-haldi-ink",
-            verdict.verdict === "unmapped" && "text-ink-soft",
+            "mt-4 rounded-[14px] px-4 py-3 text-[14px] leading-relaxed",
+            tone === "ok" && "bg-leaf-wash text-leaf-deep",
+            tone === "warn" && "bg-haldi-wash text-haldi-ink",
+            tone === "quiet" && "bg-surface text-ink-soft ring-1 ring-line",
           )}
         >
-          {verdict.verdict === "agrees" ? (
-            <Check className="mt-0.5 size-4.5 shrink-0" strokeWidth={2} aria-hidden />
-          ) : verdict.verdict === "differs" ? (
-            <AlertTriangle className="mt-0.5 size-4.5 shrink-0" strokeWidth={1.9} aria-hidden />
-          ) : (
-            <HelpCircle className="mt-0.5 size-4.5 shrink-0" strokeWidth={1.9} aria-hidden />
-          )}
-          <span>
-            {verdict.verdict === "agrees"
-              ? mr
-                ? "फोटो आणि नकाशा जुळतात."
-                : "The photo and the survey agree."
-              : verdict.verdict === "differs"
+          {verdict.verdict === "agrees"
+            ? `${
+                verdict.matched === surveyed?.soil_type
+                  ? mr ? "दोन्ही एकच सांगतात." : "Both say the same."
+                  : mr
+                    ? `नकाशावर या तालुक्यात ${surveyName(verdict.matched, true)} मातीही आहे — तुमचा फोटो तिच्याशी जुळतो.`
+                    : `The map shows ${surveyName(verdict.matched, false)} soil in this taluka too, and your photo matches it.`
+              } ${
+                fusion?.applied
+                  ? mr ? "तुमचा फोटो पिकांच्या सल्ल्यात वापरला आहे." : "Your photo was used in the crop advice."
+                  : mr ? "पिकांचा सल्ला तालुक्याच्या नकाशावर आधारित आहे." : "The crop advice follows the taluka's map."
+              }`
+            : verdict.verdict === "differs"
+              ? fusion?.applied
                 ? mr
-                  ? "फोटो आणि नकाशा जुळत नाहीत. दोन कारणं असू शकतात — तुमचं शेत तालुक्याच्या सरासरीपेक्षा खरंच वेगळं आहे, किंवा फोटो चुकीचा ओळखला गेला. फोटो ओळखणारं मॉडेल साधारण चारपैकी तीन वेळा बरोबर असतं, आणि जांभी व दलदलीची माती ओळखण्यात ते सर्वात कमकुवत आहे, त्यामुळे त्याच्यावर पूर्ण भरवसा ठेवू नका. जमीन स्वतः बघून खात्री करा. शिफारस नकाशावरच आधारित आहे."
-                  : "The photo and the survey do not agree, and there are two reasons that can happen: your field genuinely differs from the taluka average, or the photo was read wrong. The classifier is right about three times in four on photographs it was not trained on, and laterite and peat are the soils it reads worst — so treat it as a prompt to look at the ground yourself, not as a finding. The recommendation above runs on the survey either way."
+                  ? `तुमचं शेत तालुक्याच्या नकाशापेक्षा वेगळं असू शकतं, किंवा फोटो चुकीचा ओळखला गेला असेल. सल्ला काढताना तुमच्या फोटोला जास्त वजन दिलं — जमीन स्वतः बघून खात्री करा.`
+                  : `Your field may really differ from the taluka map — or the photo was misread. The advice leaned towards your photo, so check the ground yourself.`
                 : mr
-                  ? "या दोन याद्या इथे जुळत नाहीत, त्यामुळे तुलना करता येत नाही."
-                  : "The two vocabularies do not meet on this class, so there is nothing to compare."}
-          </span>
+                  ? "तुमचं शेत तालुक्याच्या नकाशापेक्षा वेगळं असू शकतं, किंवा फोटो चुकीचा ओळखला गेला असेल. जमीन स्वतः बघून खात्री करा. पिकांचा सल्ला नकाशावर आधारित आहे."
+                  : "Your field may really differ from the taluka map — or the photo was misread. Check the ground yourself. The crop advice follows the map."
+              : mr
+                ? "फोटोतला मातीचा प्रकार नकाशाच्या यादीत नाही, म्हणून दोन्हींची तुलना करता येत नाही. पिकांचा सल्ला नकाशावर आधारित आहे."
+                : "The photo's soil type is not one the map uses, so the two cannot be compared. The crop advice follows the map."}
         </p>
       ) : null}
 
-      {/* What the photograph was actually allowed to do.
-          `applied: false` is the ordinary case rather than a failure — an
-          unconfident photo, a taluka the survey maps as a single soil, or a
-          soil the classifier has no class for all leave the survey standing,
-          and the farmer is better off seeing that than seeing nothing. */}
-      {context?.soil_fusion ? (
-        <div className="mt-4 rounded-[12px] border border-line bg-surface/60 p-3.5">
-          <p className="eyebrow text-ink-mute">
-            {mr ? "तुमच्या फोटोचा परिणाम" : "What your photo did"}
+      {/* The land itself, in the survey's terms and a farmer's. */}
+      {texture || depth || drainage ? (
+        <div className="mt-5 border-t border-line pt-4">
+          <p className="text-[13px] font-medium text-ink-mute">
+            {mr ? "या जमिनीबद्दल (सरकारी सर्वेक्षणातून)" : "About this land (from the government survey)"}
           </p>
-
-          {context.soil_fusion.applied ? (
-            <p className="mt-1 text-[14px] leading-relaxed text-ink">
-              {mr ? "शिफारस काढताना इंजिनने इथली माती " : "The engine treated this field as "}
-              <strong className="font-semibold">
-                {surveyName(context.soil_fusion.soil_type ?? "", mr)}
-              </strong>
-              {mr
-                ? " मानली — नकाशापेक्षा तुमच्या फोटोला अधिक वजन देऊन."
-                : ", following your photo rather than the taluka map."}
-            </p>
-          ) : (
-            <p className="mt-1 text-[14px] leading-relaxed text-ink-soft">
-              {mr
-                ? "फोटोने शिफारस बदलली नाही — सर्वेक्षणाचाच आधार घेतला गेला."
-                : "Your photo did not change the recommendation; the survey stood."}
-            </p>
-          )}
-
-          {/* Prior against posterior, because "81%" alone hides whether the
-              photograph moved anything or merely agreed with a map that was
-              already confident. */}
-          {Object.keys(context.soil_fusion.posterior).length ? (
-            <ul className="mt-2.5 grid gap-1">
-              {Object.entries(context.soil_fusion.posterior)
-                .sort((a, b) => b[1] - a[1])
-                .map(([type, after]) => {
-                  const before = context.soil_fusion?.prior[type] ?? 0;
-                  return (
-                    <li
-                      key={type}
-                      className="flex items-baseline justify-between gap-3 text-[13px]"
-                    >
-                      <span className="text-ink-soft">{surveyName(type, mr)}</span>
-                      <span className="tnum shrink-0 text-ink-mute">
-                        {Math.round(before * 100)}%
-                        <span aria-hidden> → </span>
-                        <span className="font-semibold text-ink">
-                          {Math.round(after * 100)}%
-                        </span>
-                      </span>
-                    </li>
-                  );
-                })}
-            </ul>
-          ) : null}
+          <div className="mt-3 grid gap-4 sm:grid-cols-3">
+            {texture ? (
+              <Fact
+                icon={Layers}
+                label={mr ? "पोत" : "Texture"}
+                value={mr ? texture.mr : texture.en}
+                mean={mr ? texture.mean.mr : texture.mean.en}
+              />
+            ) : null}
+            {depth ? (
+              <Fact
+                icon={Ruler}
+                label={mr ? "खोली" : "Depth"}
+                value={mr ? depth.mr : depth.en}
+                mean={mr ? depth.mean.mr : depth.mean.en}
+              />
+            ) : null}
+            {drainage ? (
+              <Fact
+                icon={Droplets}
+                label={mr ? "पाण्याचा निचरा" : "Drainage"}
+                value={mr ? drainage.mr : drainage.en}
+                mean={mr ? drainage.mean.mr : drainage.mean.en}
+              />
+            ) : null}
+          </div>
+          <p className="mt-4 text-[12px] leading-relaxed text-ink-mute">
+            {mr
+              ? "खोली, निचरा आणि क्षार नेहमी सर्वेक्षणातूनच घेतले जातात — ते फोटोत दिसत नाहीत."
+              : "Depth, drainage and salt always come from the survey — a photo cannot show them."}
+          </p>
         </div>
       ) : null}
-
-      {/* Depth and drainage are what the gate's hard factors ran on, and they
-          come from the survey whatever the photograph says — that is what
-          stops a misread picture from lifting a safety veto. Texture is the
-          one line here a confident photo can nudge. */}
-      {surveyed && (surveyed.texture || surveyed.depth || surveyed.drainage) ? (
-        <dl className="mt-4 grid gap-1.5 border-t border-line pt-3 sm:grid-cols-3">
-          {([
-            ["texture", mr ? "पोत" : "Texture"],
-            ["depth", mr ? "खोली" : "Depth"],
-            ["drainage", mr ? "निचरा" : "Drainage"],
-          ] as const).map(([key, label]) =>
-            surveyed[key] ? (
-              <div key={key}>
-                <dt className="text-[12px] text-ink-mute">{label}</dt>
-                <dd className="text-[13.5px] font-medium text-ink">{surveyed[key]}</dd>
-              </div>
-            ) : null,
-          )}
-        </dl>
-      ) : null}
-
-      <p className="mt-3 text-[12px] leading-relaxed text-ink-mute">
-        {mr
-          ? "फोटो आता शिफारशीत वापरला जातो — तो सर्वेक्षणासोबत तोलला जातो आणि पिकांचा क्रम बदलू शकतो. पण खोली, निचरा आणि क्षारता नेहमी सर्वेक्षणातूनच येतात, त्यामुळे फोटो कोणतीही सुरक्षा-तपासणी काढून टाकू शकत नाही."
-          : "The photo is an input now: it is weighed against the survey and can change which crops are ranked. But depth, drainage and salinity always come from the survey, so a photo can add a caution and can never remove one."}
-      </p>
     </section>
   );
 }

@@ -51,8 +51,13 @@ def search_youtube(query: str, max_results: int = 3) -> list[dict[str, str]]:
                 "maxResults": max_results,
                 "safeSearch": "strict",
                 "relevanceLanguage": "en",
-                "key": YOUTUBE_API_KEY,
+                # Indian results first: a Marathi or Hindi extension video
+                # beats a well-produced one about Iowa.
+                "regionCode": "IN",
             },
+            # In a header, not the query string, so the key never appears in
+            # a logged request URL.
+            headers={"X-Goog-Api-Key": YOUTUBE_API_KEY},
             timeout=10,
         )
         response.raise_for_status()

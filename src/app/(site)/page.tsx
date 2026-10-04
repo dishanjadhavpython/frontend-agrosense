@@ -1,6 +1,5 @@
 import { Hero } from "@/components/site/Hero";
 import { CardUpload } from "@/components/site/CardUpload";
-import { CardReading } from "@/components/site/CardReading";
 import { Soils } from "@/components/site/Soils";
 import { Crops } from "@/components/site/Crops";
 import { Fertilizers } from "@/components/site/Fertilizers";
@@ -15,9 +14,11 @@ export default function Home() {
       {/* The card goes in first, immediately after the promise. Everything
           below is what we do with it once we have it. */}
       <CardUpload />
-      {/* And immediately what comes back off it. Directly under the upload
-          because the two are one argument: hand it over, see it read. */}
-      <CardReading />
+      {/* `<CardReading />` — "Your card as a picture" — came off the page.
+          The twelve readings it charted are already drawn, against their
+          ranges, inside the upload panel the moment a card is read, so it
+          was the same numbers a second time between the card and the advice
+          that follows from them. The component is left in the tree. */}
       {/* Soil, then crop, then fertilizer — the order the product works in. */}
       <Soils />
       <Crops />

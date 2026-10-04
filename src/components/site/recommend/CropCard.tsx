@@ -1,37 +1,43 @@
 "use client";
 
 import Image from "next/image";
+import { ChevronDown, Droplets } from "lucide-react";
 import { photo } from "@/lib/assets";
 import { cn } from "@/lib/cn";
 import { cleanEngineMarathi, cropFromEngine } from "@/data/cropOntology";
 import { categoryTint, categoryLabel } from "@/data/crops";
 import type { CropAdvice } from "@/lib/recommendTypes";
+import { factorLabel } from "./FactorBreakdown";
 
 /**
- * One crop the engine ranked, as a card.
+ * One crop the engine ranked, as a pallet in the recommendation deck.
+ *
+ * The same object the worked example's crops are drawn as (`Pallet` in
+ * `Prediction.tsx`): the photograph filling a tall rounded card, a scrim at its
+ * foot, the type on the photograph. The board used to lay these out as a grid
+ * of short buttons, and a `<button>` shrinks to its content rather than filling
+ * its cell — so every card came out a different width with the gaps between
+ * them wherever the text happened to end. In a deck every pallet has one fixed
+ * width and the row scrolls, so they cannot drift.
+ *
+ * A button, not a link: tapping a crop opens what the engine worked out about
+ * it directly under the deck, which is the thing a farmer is deciding on. The
+ * crop's own page — general information and the agents' latest — is one tap
+ * further, from the panel the card opens.
  *
  * ── The image slot ─────────────────────────────────────────────────────────
  *
  * Every recommendable crop draws its frame whether or not the photograph
- * exists. Twelve of the nineteen have no file yet, and a card that collapsed
- * to a text row while its neighbours carried photographs would read as a
- * lesser recommendation — it isn't one, the engine ranked it the same way.
- *
- * So the aspect ratio is fixed and the placeholder is the designed furrow
- * gradient, exactly as `Pallet` in `Prediction.tsx` already does it. Dropping
- * `public/img/crops/<key>.jpg` in and registering it in `assets.ts` changes
- * pixels and never layout.
+ * exists, so a crop without one never reads as a lesser recommendation.
  *
  * ── The name ───────────────────────────────────────────────────────────────
  *
- * Comes from `CROPS`, not from the engine. `crop_marathi` is the government
- * table's `Crop_Local_Name` and calls mung bean "मॉथ बीन", which is moth bean
- * — a different crop. See `cropOntology.ts`. The engine's own string is only
- * ever a fallback for something `CROPS` has never heard of, and even then it
- * goes through `cleanEngineMarathi`.
+ * From `CROPS`, not the engine: `crop_marathi` is the government table's
+ * `Crop_Local_Name`, which calls mung bean "मॉथ बीन" (moth bean, a different
+ * crop). See `cropOntology.ts`.
  */
 
-const CLASS_LABEL: Record<string, { mr: string; en: string; tint: string }> = {
+export const CLASS_LABEL: Record<string, { mr: string; en: string; tint: string }> = {
   S1: { mr: "अतिशय योग्य", en: "Highly suitable", tint: "bg-leaf-wash text-leaf-deep" },
   S2: { mr: "योग्य", en: "Suitable", tint: "bg-leaf-wash text-leaf-deep" },
   S3: { mr: "बेताचं", en: "Marginal", tint: "bg-haldi-wash text-haldi-ink" },
@@ -39,15 +45,7 @@ const CLASS_LABEL: Record<string, { mr: string; en: string; tint: string }> = {
   "?": { mr: "ठरवता आलं नाही", en: "Not assessed", tint: "bg-surface text-ink-mute" },
 };
 
-const DECIDED_BY: Record<string, { mr: string; en: string }> = {
-  model: { mr: "मॉडेलनुसार", en: "by the model" },
-  rules: { mr: "नियमांनुसार", en: "by the rules" },
-  blend: { mr: "दोन्हींनुसार", en: "by model + rules" },
-  "rules (out of distribution)": {
-    mr: "नियमांनुसार (हा तालुका वेगळा आहे)",
-    en: "by rules — this taluka is unlike the training set",
-  },
-};
+const ACRES_PER_HA = 2.471;
 
 export function CropCard({
   advice,
@@ -68,90 +66,124 @@ export function CropCard({
   const src = crop ? photo(crop.img) : undefined;
   const klass = CLASS_LABEL[advice.suitability_class] ?? CLASS_LABEL["?"];
 
+  // The one number a farmer compares crops on, in the unit they sell in.
+  const yieldQAcre =
+    !advice.yield_abstained && advice.yield_p50_t_ha != null
+      ? (advice.yield_p50_t_ha * 10) / ACRES_PER_HA
+      : null;
+  const weakest = advice.factors[advice.limiting_factor as keyof typeof advice.factors];
+  const heldBack = typeof weakest === "number" && weakest < 0.75;
+
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "group/card relative flex h-full flex-col overflow-hidden rounded-[var(--radius-photo)] border text-left transition-colors",
-        selected
-          ? "border-leaf ring-2 ring-leaf/40"
-          : "border-ink/10 hover:border-leaf/50",
+        "group/pallet relative block aspect-[3/4] w-full overflow-hidden rounded-[26px] border bg-night text-left",
+        "transition-[border-color,box-shadow] duration-300",
+        selected ? "border-leaf ring-[3px] ring-leaf/45" : "border-ink/10 hover:border-leaf/50",
       )}
-      style={{ boxShadow: "var(--shadow-card)" }}
+      style={{ boxShadow: "var(--shadow-panel)" }}
     >
-      {/* The slot. Fixed aspect, filled either way. */}
-      <div className="relative aspect-[4/3] overflow-hidden bg-night">
-        {src ? (
-          <Image
-            src={src}
-            alt={crop ? (mr ? crop.mr : crop.en) : advice.crop}
-            fill
-            sizes="(max-width: 640px) 45vw, 240px"
-            className="object-cover transition-transform duration-[1.1s] ease-[var(--ease-regur)] group-hover/card:scale-105"
-          />
-        ) : (
-          /* `night` and `night-rise` rather than the green ramp, and that is
-             the one place this card departs from `Pallet` in
-             `Prediction.tsx`. The leaf tokens invert with the theme — in the
-             dark `leaf-5` is #b7e04b — so that gradient turns a photo-less
-             card into a glowing lime panel sitting next to real photographs.
-             The night pair barely moves between themes, which is what a
-             stand-in for a photograph needs to do. */
-          <div
-            className="field-rows absolute inset-0"
-            style={{
-              backgroundImage:
-                "linear-gradient(160deg, var(--color-night-rise) 0%, var(--color-night) 100%)",
-            }}
-            aria-hidden
-          />
-        )}
+      {src ? (
+        <Image
+          src={src}
+          alt={crop ? (mr ? crop.mr : crop.en) : advice.crop}
+          fill
+          sizes="(max-width: 640px) 280px, 352px"
+          className="object-cover transition-transform duration-[1.1s] ease-[var(--ease-regur)] group-hover/pallet:scale-105"
+        />
+      ) : (
+        /* `night` and `night-rise` rather than the green ramp: the leaf tokens
+           invert with the theme, and a photo-less card turned into a glowing
+           lime panel next to real photographs. */
         <div
-          className="absolute inset-0"
+          className="field-rows absolute inset-0"
           style={{
-            background:
-              "linear-gradient(180deg, rgba(7,12,9,.50) 0%, rgba(7,12,9,.10) 40%, rgba(7,12,9,.86) 100%)",
+            backgroundImage:
+              "linear-gradient(160deg, var(--color-night-rise) 0%, var(--color-night) 100%)",
           }}
           aria-hidden
         />
-        <span className="tnum absolute top-2.5 left-2.5 grid size-7 place-items-center rounded-full bg-chalk/95 text-[13px] font-bold text-on-light">
-          {advice.rank}
-        </span>
-        <div className="absolute right-3 bottom-2.5 left-3">
-          <p className="truncate text-[1.05rem] leading-tight font-semibold text-chalk font-[family-name:var(--font-display)]">
-            {name}
-          </p>
-          {sub ? <p className="truncate text-[11.5px] text-mist">{sub}</p> : null}
-        </div>
-      </div>
+      )}
 
-      {/* `flex-1` so five cards in a row end level regardless of how many
-          chips wrap — the rank badge is a comparison and a ragged bottom
-          edge reads as one card mattering more than another. */}
-      <div className="flex flex-1 flex-col bg-surface px-3.5 py-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className={cn("rounded-full px-2 py-0.5 text-[11.5px] font-medium", klass.tint)}>
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(7,12,9,.58) 0%, rgba(7,12,9,.08) 30%, rgba(7,12,9,.70) 62%, rgba(7,12,9,.94) 100%)",
+        }}
+        aria-hidden
+      />
+
+      <div className="relative flex h-full flex-col justify-between p-5">
+        <div className="flex items-start justify-between gap-3">
+          <span className="tnum grid size-10 shrink-0 place-items-center rounded-full bg-chalk text-[16px] font-bold text-on-light">
+            {advice.rank}
+          </span>
+          <span className={cn("rounded-full px-2.5 py-1 text-[12.5px] font-semibold", klass.tint)}>
             {mr ? klass.mr : klass.en}
           </span>
-          {crop ? (
-            <span className={cn("rounded-full px-2 py-0.5 text-[11.5px] font-medium", categoryTint[crop.category])}>
-              {mr ? categoryLabel[crop.category].mr : categoryLabel[crop.category].en}
-            </span>
-          ) : null}
-          {advice.requires_irrigation ? (
-            <span className="rounded-full bg-jal-wash px-2 py-0.5 text-[11.5px] font-medium text-jal-ink">
-              {mr ? "पाणी लागेल" : "Needs water"}
-            </span>
-          ) : null}
         </div>
-        <p className="mt-auto pt-2 text-[12px] text-ink-mute">
-          {mr ? "ठरवलं " : "Decided "}
-          {(DECIDED_BY[advice.decided_by] ?? { mr: advice.decided_by, en: advice.decided_by })[
-            mr ? "mr" : "en"
-          ]}
-        </p>
+
+        <div>
+          <p className="truncate text-[1.6rem] leading-tight font-semibold text-chalk font-[family-name:var(--font-display)]">
+            {name}
+          </p>
+          {sub ? <p className="mt-0.5 truncate text-[14px] text-mist">{sub}</p> : null}
+
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            {crop ? (
+              <span className={cn("rounded-full px-2 py-0.5 text-[11.5px] font-semibold", categoryTint[crop.category])}>
+                {mr ? categoryLabel[crop.category].mr : categoryLabel[crop.category].en}
+              </span>
+            ) : null}
+            {advice.requires_irrigation ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-jal-wash px-2 py-0.5 text-[11.5px] font-semibold text-jal-ink">
+                <Droplets className="size-3" strokeWidth={2.2} aria-hidden />
+                {mr ? "पाणी लागेल" : "Needs water"}
+              </span>
+            ) : null}
+          </div>
+
+          {/* Two facts a farmer compares crops on: what it should yield, and
+              the one thing in its way. */}
+          <dl className="mt-3.5 grid grid-cols-2 gap-3 border-t border-chalk/15 pt-3.5">
+            <div className="min-w-0">
+              <dt className="text-[11.5px] text-mist/85">{mr ? "अपेक्षित उत्पन्न" : "Expected yield"}</dt>
+              <dd className="tnum mt-0.5 truncate text-[15px] font-semibold text-chalk">
+                {yieldQAcre != null
+                  ? mr
+                    ? `${yieldQAcre.toFixed(1)} क्विं./एकर`
+                    : `${yieldQAcre.toFixed(1)} q/acre`
+                  : "—"}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-[11.5px] text-mist/85">{mr ? "अडथळा" : "Held back by"}</dt>
+              <dd className="mt-0.5 truncate text-[15px] font-semibold text-chalk">
+                {heldBack ? factorLabel(advice.limiting_factor, mr) : mr ? "काही नाही" : "Nothing serious"}
+              </dd>
+            </div>
+          </dl>
+
+          <p
+            className={cn(
+              "mt-3.5 flex items-center gap-1.5 text-[13px] font-semibold",
+              selected ? "text-leaf-3 dark:text-leaf" : "text-chalk/80",
+            )}
+          >
+            {selected
+              ? mr ? "माहिती खाली उघडली आहे" : "Details open below"
+              : mr ? "माहितीसाठी दाबा" : "Tap for details"}
+            <ChevronDown
+              className={cn("size-4 transition-transform", selected ? "" : "-rotate-90")}
+              strokeWidth={2.2}
+              aria-hidden
+            />
+          </p>
+        </div>
       </div>
     </button>
   );

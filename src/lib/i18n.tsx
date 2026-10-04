@@ -65,7 +65,7 @@ export const dict = {
   actTakePhoto: { mr: "फोटो घ्या", en: "Take photo" },
   actRetake: { mr: "पुन्हा फोटो घ्या", en: "Retake" },
   actChooseFile: { mr: "फाइल निवडा", en: "Choose file" },
-  actTrySample: { mr: "नमुना कार्ड वापरा", en: "Try a sample card" },
+  actTrySample: { mr: "नमुना निकाल बघा", en: "See a sample result" },
   actAddPlot: { mr: "शेत जोडा", en: "Add plot" },
   actSave: { mr: "जतन करा", en: "Save" },
   actCancel: { mr: "रद्द करा", en: "Cancel" },

@@ -152,6 +152,18 @@ class QuestionPayload(BaseModel):
     document_id: str | None = Field(default=None, max_length=255)
 
 
+class ResearchPayload(BaseModel):
+    """Topics to research now, by the names the topic list uses.
+
+    Capped per category: a recommendation names five crops and a handful of
+    fertilisers, and nothing a page legitimately asks for is longer.
+    """
+
+    soil: list[str] = Field(default_factory=list, max_length=2)
+    crop: list[str] = Field(default_factory=list, max_length=5)
+    fertilizer: list[str] = Field(default_factory=list, max_length=6)
+
+
 @app.get("/api/health")
 def health(request: Request) -> dict[str, object]:
     """Two answers, depending on who is asking.
@@ -284,6 +296,44 @@ def insights(category: str, slug: str) -> dict[str, object]:
         **freshness,
         "report": report,
     }
+
+
+@app.post("/api/research")
+def research(
+    payload: ResearchPayload,
+    user: dict = Depends(require_user),
+) -> dict[str, object]:
+    """Ask the agents for these topics now, instead of at the next sweep.
+
+    `/api/predict` and `/api/soil` already start research for what they
+    returned. The recommendation engine is a separate service and starts none,
+    so the crops it ranks — the crops a farmer actually taps — sat at "queued
+    for the next sweep" for up to eight hours. This is the door for that: the
+    board asks for its top crops as soon as it renders, and a detail page asks
+    for its own topic when the farmer taps "get the latest".
+
+    Same queue, same rules: a topic researched in the last eight hours is
+    skipped, one already running is not started twice, and at most
+    `AGENTS_MAX_INFLIGHT` run at once — the rest are left to the sweep. It
+    returns at once; the page polls `/api/insights` for the report.
+
+    Signed-in and rate-limited, because each topic it starts costs four model
+    calls. Unknown names are dropped rather than rejected: the caller is a page
+    listing what it shows, not a form a person typed into.
+    """
+    enforce_limit(user, "research")
+    requested = {
+        "soil": [s for s in payload.soil if find_topic("soil", s)],
+        "crop": [c for c in payload.crop if find_topic("crop", c)],
+        "fertilizer": [f for f in payload.fertilizer if find_topic("fertilizer", f)],
+    }
+    try:
+        # Recorded so the sweep keeps refreshing what farmers are looking at.
+        demand.record(requested)
+    except Exception:  # noqa: BLE001 - bookkeeping must not fail the request
+        logger.exception("Could not record research demand")
+    result = agent_queue.request_now(requested)
+    return {**result, "enabled": AGENTS_ENABLED}
 
 
 @app.post("/api/predict")

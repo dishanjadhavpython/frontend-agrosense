@@ -71,7 +71,7 @@ export function Hero() {
             <ButtonLink href="/#upload" variant="primary" className="px-7">
               {t("actTestSoil")}
             </ButtonLink>
-            <ButtonLink href="/#reading" variant="quiet">
+            <ButtonLink href="/#prediction" variant="quiet">
               {t("actTrySample")} →
             </ButtonLink>
           </motion.div>

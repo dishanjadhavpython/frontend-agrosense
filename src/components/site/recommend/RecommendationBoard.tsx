@@ -1,31 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Sprout } from "lucide-react";
 import { title as titleCase } from "@/lib/format";
+import { cropFromEngine } from "@/data/cropOntology";
+import { requestResearch } from "@/lib/research";
 import type { Recommendation } from "@/lib/recommendTypes";
+import { Deck } from "@/components/ui/Deck";
 import { CropCard } from "./CropCard";
 import { CropDetailPanel } from "./CropDetailPanel";
-import {
-  ConfidenceNote,
-  ContextAudit,
-  Micronutrients,
-  VetoedCrops,
-} from "./RecommendAside";
+import { ConfidenceNote, ContextAudit, Micronutrients } from "./RecommendAside";
 
 /**
  * The engine's answer, on one board.
  *
- * The five ranked crops sit in a row and one of them is open below. That
- * shape is deliberate: a farmer needs one decision, not five, but the four
- * they did not pick have to stay visible or the ranking is just an assertion.
- * Clicking a card opens it — no accordion, no route change, nothing to lose
- * your place in.
+ * The ranked crops are a deck — the same object the worked example's crops
+ * are drawn as — and the crop in the centre is the one opened below it. A
+ * farmer needs one decision, not five, but the four they did not pick stay one
+ * swipe away or the ranking is just an assertion. Swiping and tapping end in
+ * the same place: whichever crop settles in the middle is the one described.
  *
- * The order down the page is the order the questions arrive: is this answer
- * trustworthy at all (the abstention banner), what should I sow (the cards),
- * why and how much (the open crop), and then the three things that qualify
- * all of it — what was ruled out, what the soil is short of, and which
- * number came from whose measurement.
+ * Down the page, the order the questions arrive in: is this answer
+ * trustworthy at all (the warnings), what should I sow (the deck), why and
+ * how much (the open crop), and then what the soil is short of and where each
+ * number came from.
+ *
+ * What the engine ruled out is no longer listed. Twelve crops a farmer was
+ * never going to sow, each with a reason in the engine's vocabulary, sat
+ * between the answer and the advice that follows from it; the ranking already
+ * says what to sow, and what not to sow is everything else.
  */
 
 const SEASON_LABEL: Record<string, { mr: string; en: string }> = {
@@ -42,8 +45,23 @@ export function RecommendationBoard({
   recommendation: Recommendation;
   mr: boolean;
 }) {
-  const [openRank, setOpenRank] = useState(1);
-  const open = r.crops.find((c) => c.rank === openRank) ?? r.crops[0];
+  const [openIndex, setOpenIndex] = useState(0);
+  const open = r.crops[openIndex] ?? r.crops[0];
+
+  // Start the agents on the top crops now, so each crop's page has its latest
+  // report — prices, schemes, a video — by the time the farmer opens it. The
+  // engine is a separate service and starts no research of its own. Three,
+  // because that is how many run at once; the rest wait for a tap or the
+  // sweep. Fire and forget: the board is the answer, this only warms the
+  // pages it links to. (The board is keyed on the answer, so this runs once
+  // per recommendation.)
+  useEffect(() => {
+    const crops = r.crops
+      .slice(0, 3)
+      .map((c) => cropFromEngine(c.crop)?.key)
+      .filter((k): k is string => Boolean(k));
+    if (crops.length) void requestResearch({ crop: crops });
+  }, [r.crops]);
 
   const season = SEASON_LABEL[r.season] ?? { mr: r.season, en: r.season };
   const farmer = r.soil_test_source === "farmer soil health card";
@@ -67,32 +85,53 @@ export function RecommendationBoard({
 
       {r.crops.length ? (
         <>
-          <ul className="mt-7 grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {r.crops.map((advice) => (
-              <li key={advice.crop}>
-                <CropCard
-                  advice={advice}
-                  selected={advice.rank === open?.rank}
-                  onSelect={() => setOpenRank(advice.rank)}
-                  mr={mr}
-                />
-              </li>
-            ))}
-          </ul>
+          <div className="mt-10 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+            <h3 className="flex items-center gap-2.5 text-[17px] font-semibold text-ink">
+              <span className="grid size-9 shrink-0 place-items-center rounded-[11px] bg-leaf-wash text-leaf">
+                <Sprout className="size-[18px]" strokeWidth={1.9} aria-hidden />
+              </span>
+              {mr ? "तुमच्या शेतासाठी सर्वोत्तम पिकं" : "The best crops for your field"}
+            </h3>
+            <p className="text-[14px] text-ink-mute">
+              {mr
+                ? `${r.crops.length} पिकं, सर्वोत्तम आधी · बाजूला सरकवा किंवा दाबा`
+                : `${r.crops.length} crops, best first · swipe or tap one`}
+            </p>
+          </div>
 
-          {open ? <CropDetailPanel advice={open} mr={mr} /> : null}
+          <Deck
+            label={mr ? "शिफारस केलेली पिकं" : "Recommended crops"}
+            glow="leaf"
+            focusIndex={openIndex}
+            onActiveChange={setOpenIndex}
+          >
+            {r.crops.map((advice, i) => (
+              <CropCard
+                key={advice.crop}
+                advice={advice}
+                selected={i === openIndex}
+                onSelect={() => setOpenIndex(i)}
+                mr={mr}
+              />
+            ))}
+          </Deck>
+
+          {open ? (
+            <div className="mt-8">
+              <CropDetailPanel advice={open} mr={mr} />
+            </div>
+          ) : null}
         </>
       ) : (
         <p className="mt-6 rounded-[var(--radius-card)] border border-anar/50 bg-anar-wash px-4 py-3 text-[14px] text-anar">
           {mr
-            ? "या हंगामात इथे शिफारस करण्यासारखं एकही पीक नाही. खाली कारणं आहेत."
-            : "Nothing clears the agronomic gate here this season. The reasons are below."}
+            ? "या हंगामात इथे शिफारस करण्यासारखं एकही पीक नाही. हंगाम किंवा पाण्याची सोय बदलून पुन्हा बघा."
+            : "No crop suits this field this season. Try another season, or say whether you can irrigate."}
         </p>
       )}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Micronutrients items={r.micronutrients} mr={mr} />
-        <VetoedCrops vetoed={r.vetoed} notAssessable={r.not_assessable} mr={mr} />
         <ContextAudit
           context={r.context}
           soilTestSource={r.soil_test_source}

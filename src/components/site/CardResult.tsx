@@ -114,7 +114,7 @@ export function CardResult({
           ? "हेच आकडे खाली प्रत्येक विभागात वापरले आहेत — माती, पीक आणि खत."
           : "These same figures run through the sections below — your soil, your crop, and what to feed it."}{" "}
         <a
-          href="#reading"
+          href="#prediction"
           className="font-semibold text-leaf underline decoration-leaf/40 underline-offset-4 hover:decoration-leaf"
         >
           {mr ? "पुढे बघा" : "Keep reading"}

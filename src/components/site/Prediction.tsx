@@ -239,7 +239,13 @@ export function Prediction() {
 
       {recommendation ? (
         <Reveal className="mt-10">
-          <RecommendationBoard recommendation={recommendation} mr={mr} />
+          {/* Keyed on the answer, so a new recommendation opens on its own
+              first crop rather than on whatever index the last one left. */}
+          <RecommendationBoard
+            key={`${recommendation.taluka}|${recommendation.season}|${recommendation.irrigated}|${recommendation.crops.map((c) => c.crop).join(",")}`}
+            recommendation={recommendation}
+            mr={mr}
+          />
         </Reveal>
       ) : (
         <>

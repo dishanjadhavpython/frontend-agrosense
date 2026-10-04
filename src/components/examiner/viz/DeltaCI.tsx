@@ -11,8 +11,8 @@ import { q } from "./geom";
  * the interval crosses zero it says so in grey rather than in gold.
  *
  * SVG rather than divs: the whisker, the cap, the zero rule and the dot have to
- * share one coordinate system, which is the line `LiebigStaves` already draws
- * between the two techniques.
+ * share one coordinate system, which is the line the retired `LiebigStaves`
+ * barrel chart drew between the two techniques.
  */
 export function DeltaCI({
   rows,

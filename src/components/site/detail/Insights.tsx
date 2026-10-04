@@ -1,19 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
+  ArrowRight,
   BadgeIndianRupee,
+  Bot,
   ExternalLink,
   Info,
   Landmark,
+  LoaderCircle,
   PlayCircle,
+  RefreshCw,
   ShoppingCart,
   Sparkles,
 } from "lucide-react";
 import { useLang } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import type { InsightsResponse, TopicReport } from "@/lib/cardTypes";
+import { requestResearch } from "@/lib/research";
 
 /**
  * What the research agents found, on a detail page.
@@ -57,19 +62,52 @@ export function Insights({
   const { lang } = useLang();
   const mr = lang === "mr";
   const [state, setState] = useState<InsightsResponse | null>(null);
+  const [ask, setAsk] = useState<Ask>({ kind: "idle" });
+  // Bumped to restart the fetch loop — after a tap starts the agents, the
+  // next read is the one that sees `researching` and begins polling.
+  const [round, setRound] = useState(0);
+
+  // A tap that arrives before the first read has landed is kept, not
+  // dropped: the link is at the top of the page and the read is not instant.
+  const pending = useRef(false);
+
+  /** Start the agents on this topic now. */
+  const getLatest = useCallback(async () => {
+    setAsk({ kind: "asking" });
+    const outcome = await requestResearch({ [category]: [slug] });
+    if (!outcome.ok) {
+      setAsk({ kind: "error", error: outcome.error });
+      return;
+    }
+    const key = `${category}/${slug}`;
+    const mine = outcome.result.skipped.find((s) => s.startsWith(`${key} `)) ?? "";
+    if (outcome.result.started.includes(key) || mine.includes("already running")) {
+      setAsk({ kind: "started" });
+      // Shown as working at once, not after the next read: between the tap
+      // and that read, the old "nothing yet" state would otherwise flash the
+      // failure sentence below.
+      setState((prev) => (prev ? { ...prev, researching: true } : prev));
+    } else if (mine.includes("fresh")) {
+      setAsk({ kind: "fresh" });
+    } else if (mine.includes("queue full")) {
+      setAsk({ kind: "busy" });
+    } else if (outcome.result.enabled === false) {
+      setAsk({ kind: "error", error: "unavailable" });
+      return;
+    } else {
+      setAsk({ kind: "error", error: "unavailable" });
+      return;
+    }
+    setRound((r) => r + 1);
+  }, [category, slug]);
 
   /**
    * Fetch, and keep fetching while the agents are on this topic.
    *
-   * Predict now starts research for exactly what it predicted, so a farmer can
-   * be standing on this page while four agents are writing it. Polling turns
-   * that from "come back later" into a section that fills in under them —
-   * which is the difference between a feature that appears not to work and one
-   * that visibly does.
-   *
-   * Fifteen seconds, and only while `researching` is true. A topic that is
-   * merely stale is not polled: the sweep will refresh it within the half
-   * hour, and nobody is waiting for that.
+   * Every eight seconds, and only while `researching` is true. A run takes
+   * about a minute, so a farmer who tapped "get the latest" sees the report
+   * arrive within seconds of it being written; a topic that is merely stale
+   * is not polled, because nobody is waiting on it.
    */
   useEffect(() => {
     let cancelled = false;
@@ -77,11 +115,18 @@ export function Insights({
 
     const load = async () => {
       try {
-        const response = await fetch(`/api/insights/${category}/${slug}`);
+        const response = await fetch(`/api/insights/${category}/${slug}`, { cache: "no-store" });
         const payload = (await response.json()) as InsightsResponse;
         if (cancelled) return;
         setState(payload);
-        if (payload.researching) timer = setTimeout(load, 15_000);
+        if (pending.current) {
+          pending.current = false;
+          if ((!payload.available || payload.stale) && !payload.researching) {
+            void getLatest();
+            return;
+          }
+        }
+        if (payload.researching) timer = setTimeout(load, 8_000);
       } catch {
         // A failed poll stops the loop rather than retrying forever against a
         // service that is down. The panel says so and the page still stands.
@@ -94,7 +139,27 @@ export function Insights({
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [category, slug]);
+  }, [category, slug, round, getLatest]);
+
+
+  /**
+   * The page header's "See the latest updates" is a request, not only a
+   * scroll: it announces itself with this event, and a topic with no report
+   * or a stale one starts the agents. A fresh report is just shown.
+   */
+  useEffect(() => {
+    const onRequest = () => {
+      if (!state) {
+        pending.current = true;
+        return;
+      }
+      const stale = !state.available || state.stale;
+      if (stale && !state.researching && ask.kind !== "asking") void getLatest();
+    };
+    window.addEventListener(LATEST_EVENT, onRequest);
+    return () => window.removeEventListener(LATEST_EVENT, onRequest);
+  }, [state, ask.kind, getLatest]);
+
 
   // Still asking. The panel keeps its space rather than appearing under the
   // reader's thumb a second after they start reading the section above it.
@@ -108,62 +173,50 @@ export function Insights({
     );
   }
 
-  // No report yet. This used to render nothing at all, which told a farmer the
-  // product has no live information — when the truth is that it has not been
-  // gathered for *this* topic yet and will be at the next sweep. An empty
-  // state that explains itself is worth the space.
-  //
-  // The wording is written here rather than taken from the service's `reason`,
-  // which is a single English sentence. On a page that is Marathi first, the
-  // one state a farmer is most likely to hit is not the place to switch
-  // languages on them.
-  //
-  // `enabled` is the discriminator, and its absence is meaningful. The reading
-  // service sends it either way, so a payload without it did not come from the
-  // reading service at all — the proxy route could not reach it and answered
-  // for it. Promising that a report "will appear after the next sweep" in that
-  // state would be a promise nothing is running to keep, which is exactly the
-  // failure a farmer cannot detect: an empty section that says wait, forever.
+  // `enabled` is the discriminator, and its absence is meaningful: the
+  // reading service sends it either way, so a payload without it came from
+  // the proxy answering for a service it could not reach.
+  const reachable = state.enabled !== undefined;
+  const enabled = state.enabled === true;
+
   if (!state.available) {
-    // Being written right now. Distinct from "not researched yet", and worth
-    // its own state: one is a promise about the future, this is a description
-    // of what is happening while the farmer reads.
+    // Being written right now — by a tap here, a prediction, or the sweep.
     if (state.researching) {
       return (
         <Panel mr={mr} dateline={null}>
-          <p className="flex items-start gap-3 text-[15px] leading-relaxed text-ink-soft">
-            <span
-              className="mt-1.5 size-2 shrink-0 animate-pulse rounded-full bg-haldi"
-              aria-hidden
-            />
-            <span>
-              <strong className="font-semibold text-ink">
-                {mr ? "माहिती गोळा करतो आहे. " : "Gathering this now. "}
-              </strong>
-              {mr
-                ? "तुम्ही अंदाज काढल्यावर हे सुरू झालं. साधारण एक मिनिट लागतो — पान आपोआप भरेल, थांबायची गरज नाही."
-                : "This started when you hit Predict. It takes about a minute — the page fills in on its own, so there is nothing to wait for."}
-            </span>
-          </p>
+          <Working mr={mr} />
         </Panel>
       );
     }
 
     return (
       <Panel mr={mr} dateline={null}>
-        <p className="text-[15px] leading-relaxed text-ink-soft">
-          {state.enabled === undefined
-            ? mr
+        {!reachable ? (
+          <p className="text-[15px] leading-relaxed text-ink-soft">
+            {mr
               ? "ताजी माहिती देणारी सेवा सध्या पोहोचत नाही. पानावरची बाकीची माहिती जशीच्या तशी आहे."
-              : "The service that gathers updates can't be reached right now. Everything else on this page still stands."
-            : state.enabled
-              ? mr
-                ? "या विषयाची ताजी माहिती अजून गोळा केलेली नाही. पुढच्या फेरीत ती इथे दिसेल."
-                : "The latest updates for this topic have not been gathered yet. They will appear here after the next research sweep."
-              : mr
-                ? "या सर्व्हरवर ताजी माहिती गोळा करण्याची सोय सुरू केलेली नाही."
-                : "Live updates are not switched on for this server."}
-        </p>
+              : "The service that gathers updates can't be reached right now. Everything else on this page still stands."}
+          </p>
+        ) : !enabled ? (
+          <p className="text-[15px] leading-relaxed text-ink-soft">
+            {mr
+              ? "या सर्व्हरवर ताजी माहिती गोळा करण्याची सोय सुरू केलेली नाही."
+              : "Live updates are not switched on for this server."}
+          </p>
+        ) : (
+          <>
+            <p className="text-[15px] leading-relaxed text-ink-soft">
+              {ask.kind === "started"
+                ? mr
+                  ? "या वेळी माहिती गोळा करता आली नाही. थोड्या वेळाने पुन्हा प्रयत्न करा."
+                  : "The agents could not put a report together this time. Try again in a little while."
+                : mr
+                  ? "या विषयाची ताजी माहिती अजून गोळा केलेली नाही. बटण दाबा — आमचे संशोधन एजंट सरकारी संकेतस्थळं, बाजारभाव आणि व्हिडिओ आत्ता शोधतील."
+                  : "Nothing has been gathered on this yet. Tap the button and our research agents will search government sites, market prices and videos for it now."}
+            </p>
+            <GetLatest ask={ask} onAsk={getLatest} mr={mr} />
+          </>
+        )}
       </Panel>
     );
   }
@@ -191,6 +244,20 @@ export function Insights({
           ? "ही माहिती इंटरनेटवरून आपोआप गोळा केली आहे. खाली दिलेले दुवे मूळ स्रोत आहेत — मोठा खर्च करण्याआधी ते स्वतः बघा."
           : "Collected automatically from the web. The links below are the original sources — check them yourself before spending money on any of this."}
       </p>
+
+      <Provenance model={report.model} mr={mr} />
+
+      {/* A stale report can be refreshed from here. While a new one is being
+          written the old one stays on screen, marked as refreshing. */}
+      {state.researching ? (
+        <div className="mt-4">
+          <Working mr={mr} compact />
+        </div>
+      ) : state.stale && enabled ? (
+        <div className="mt-4">
+          <GetLatest ask={ask} onAsk={getLatest} mr={mr} refresh />
+        </div>
+      ) : null}
 
       {report.needs_review ? (
         <p
@@ -237,6 +304,168 @@ export function Insights({
 
       <Sources report={report} mr={mr} />
     </Panel>
+  );
+}
+
+/** Dispatched by the page header's "See the latest updates". */
+export const LATEST_EVENT = "agrosense:get-latest";
+
+type Ask =
+  | { kind: "idle" }
+  | { kind: "asking" }
+  | { kind: "started" }
+  | { kind: "fresh" }
+  | { kind: "busy" }
+  | { kind: "error"; error: "signed-out" | "limit" | "offline" | "unavailable" };
+
+/**
+ * The button that starts the agents, and what came of the last tap.
+ *
+ * Signed out is the common case on a page anyone can open, so it is a link to
+ * sign in that comes back here — not an error after the tap.
+ */
+function GetLatest({
+  ask,
+  onAsk,
+  mr,
+  refresh = false,
+}: {
+  ask: Ask;
+  onAsk: () => void;
+  mr: boolean;
+  refresh?: boolean;
+}) {
+  const busy = ask.kind === "asking";
+  const here =
+    typeof window === "undefined" ? "/" : `${window.location.pathname}#updates`;
+
+  if (ask.kind === "error" && ask.error === "signed-out") {
+    return (
+      <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[14px] text-ink-soft">
+        <a
+          href={`/sign-in?redirect_url=${encodeURIComponent(here)}`}
+          className="inline-flex min-h-12 items-center gap-2 rounded-full bg-ink px-5 font-semibold text-paper transition-colors hover:bg-leaf-deep"
+        >
+          {mr ? "लॉग इन करा" : "Sign in"}
+          <ArrowRight className="size-4" strokeWidth={2} aria-hidden />
+        </a>
+        {mr ? "ताजी माहिती मिळवण्यासाठी लॉग इन करावं लागतं." : "Sign in to have the agents gather the latest."}
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-4">
+      <button
+        type="button"
+        onClick={onAsk}
+        disabled={busy}
+        className={cn(
+          "inline-flex min-h-12 items-center gap-2 rounded-full px-5 text-[14.5px] font-semibold transition-colors disabled:cursor-wait disabled:opacity-70",
+          refresh
+            ? "border border-line bg-surface text-ink hover:border-leaf/50 hover:bg-leaf-wash"
+            : "bg-ink text-paper hover:bg-leaf-deep dark:bg-leaf dark:text-on-light dark:hover:bg-leaf-4",
+        )}
+      >
+        {busy ? (
+          <LoaderCircle className="size-4 animate-spin" strokeWidth={2.2} aria-hidden />
+        ) : (
+          <RefreshCw className="size-4" strokeWidth={2.2} aria-hidden />
+        )}
+        {refresh
+          ? mr ? "नवी माहिती आत्ता आणा" : "Refresh it now"
+          : mr ? "ताजी माहिती आत्ता मिळवा" : "Get the latest information now"}
+      </button>
+      {ask.kind === "busy" ? (
+        <p className="mt-2 text-[13.5px] text-haldi-ink">
+          {mr
+            ? "एजंट सध्या इतर विषयांवर काम करत आहेत. एका मिनिटाने पुन्हा दाबा."
+            : "The agents are busy with other topics. Tap again in a minute."}
+        </p>
+      ) : ask.kind === "fresh" ? (
+        <p className="mt-2 text-[13.5px] text-ink-soft">
+          {mr ? "ही माहिती आत्ताच अद्ययावत केली आहे." : "This was brought up to date only recently."}
+        </p>
+      ) : ask.kind === "error" ? (
+        <p className="mt-2 text-[13.5px] text-anar">
+          {ask.error === "limit"
+            ? mr ? "आजची मर्यादा संपली. उद्या पुन्हा प्रयत्न करा." : "You've reached today's limit. Try again tomorrow."
+            : mr ? "आत्ता सुरू करता आलं नाही. थोड्या वेळाने पुन्हा प्रयत्न करा." : "Couldn't start it right now. Try again shortly."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The agents at work. What it lists is what the pipeline does, not a
+ * progress bar — nothing on the server reports which step a run is on, and a
+ * bar that moved on its own would be inventing one.
+ */
+function Working({ mr, compact = false }: { mr: boolean; compact?: boolean }) {
+  return (
+    <div
+      role="status"
+      className={cn(
+        "rounded-[var(--radius-card)] border border-haldi/45 bg-haldi-wash",
+        compact ? "px-4 py-3" : "px-5 py-4",
+      )}
+    >
+      <p className="flex items-center gap-2.5 text-[15px] font-semibold text-haldi-ink">
+        <LoaderCircle className="size-4 shrink-0 animate-spin" strokeWidth={2.4} aria-hidden />
+        {compact
+          ? mr ? "नवी माहिती आत्ता गोळा होत आहे…" : "A fresh report is being gathered now…"
+          : mr ? "आमचे संशोधन एजंट आत्ता माहिती गोळा करत आहेत…" : "Our research agents are gathering this now…"}
+      </p>
+      {compact ? null : (
+        <>
+          <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft">
+            {mr
+              ? "साधारण एक मिनिट लागतो. पान आपोआप भरेल — थांबून राहायची गरज नाही."
+              : "It takes about a minute, and the page fills in on its own — no need to wait here."}
+          </p>
+          <ul className="mt-3 grid gap-1.5 text-[13px] text-ink-soft sm:grid-cols-2">
+            {(mr
+              ? [
+                  "सरकारी व कृषी संकेतस्थळं शोधणं आणि वाचणं",
+                  "data.gov.in वरचे बाजारभाव",
+                  "शेतकऱ्यांसाठी उपयोगी व्हिडिओ",
+                  "प्रत्येक मुद्दा स्रोताशी तपासणं",
+                ]
+              : [
+                  "Searching and reading government and farm sites",
+                  "Market prices from data.gov.in",
+                  "A video worth a farmer's time",
+                  "Checking every claim against its source",
+                ]
+            ).map((step) => (
+              <li key={step} className="flex items-start gap-2">
+                <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-haldi" aria-hidden />
+                {step}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Which model wrote this, named plainly. */
+function Provenance({ model, mr }: { model?: string; mr: boolean }) {
+  if (!model) return null;
+  const nova = /nova-pro/i.test(model);
+  return (
+    <p className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-full border border-line bg-paper px-3.5 py-1.5 text-[12.5px] text-ink-soft">
+      <Bot className="size-4 shrink-0 text-leaf" strokeWidth={1.9} aria-hidden />
+      {nova
+        ? mr
+          ? "AWS Bedrock वरच्या Amazon Nova Pro वर चालणाऱ्या AgroSense संशोधन एजंटनी तयार केलं"
+          : "Written by AgroSense research agents on Amazon Nova Pro (AWS Bedrock)"
+        : mr
+          ? `AgroSense संशोधन एजंटनी तयार केलं · ${model}`
+          : `Written by AgroSense research agents · ${model}`}
+    </p>
   );
 }
 
@@ -558,11 +787,12 @@ function Prices({ report, mr }: { report: TopicReport; mr: boolean }) {
       ) : (
         // "We could not ask" and "there is nothing" are different facts, and
         // the farmer is told which.
+        // In the page's own words rather than the agent's `price_note`, which
+        // is English on a Marathi-first page and once named a server setting.
         <p className="text-[15px] leading-relaxed text-ink-mute">
-          {report.price_note ||
-            (mr
-              ? "सरकारी भावाची माहिती सध्या उपलब्ध नाही."
-              : "Government price data is unavailable right now.")}
+          {mr
+            ? "सरकारी बाजारभावाची माहिती सध्या उपलब्ध नाही."
+            : "Government market prices are not available for this right now."}
         </p>
       )}
 

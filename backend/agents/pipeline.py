@@ -17,6 +17,7 @@ from .research import research_topic
 from .reviewer import review_report, strip_unsourced_claims
 from .schemas import ReviewResult, TopicReport
 from .topics import Topic
+from .videos import fallback_videos
 
 logger = logging.getLogger("agrosense.agents")
 
@@ -66,6 +67,14 @@ async def process_topic(topic: Topic, research_focus: str | None) -> dict[str, A
             report, more_stripped = strip_unsourced_claims(report)
             stripped.extend(more_stripped)
             review = await review_report(topic, report)
+
+        # A video for every report. The agent is asked to find one and often
+        # does not call the tool; the creator can also drop what it was given.
+        # Neither is a reason for the page to have none (see `videos.py`).
+        if not report.youtube_resources:
+            report.youtube_resources = findings.youtube_links or await asyncio.to_thread(
+                fallback_videos, topic
+            )
 
         payload = report.model_dump()
         payload["needs_review"] = not review.approved

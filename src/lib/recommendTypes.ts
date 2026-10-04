@@ -105,6 +105,22 @@ export type SuitabilityFactors = {
   texture: number;
 };
 
+/** The crop's own optimum window for each factor, in the units `evidence`
+ *  uses. Display only — the engine scores from its requirement table, and an
+ *  older engine sends none of this, so every field is optional. */
+export type CropNeeds = {
+  rain_mm: [number, number];
+  temp_c: [number, number];
+  pH: [number, number];
+  min_depth_mm: number;
+  /** Ordinal 1 (poorly drained) to 6 (excessively drained). */
+  drainage_ord: [number, number];
+  max_saline_pct: number;
+  min_lgp_days: number;
+  textures: string[];
+  duration_days: number;
+};
+
 export type MicronutrientCorrection = {
   component: "S" | "Fe" | "Zn" | "Cu" | "B" | "Mn";
   /** Which reading decided this: the farmer's own card, or the taluka's. */
@@ -201,6 +217,7 @@ export type CropAdvice = {
   factors: Partial<SuitabilityFactors>;
   requires_irrigation: boolean;
   evidence: Record<string, number | boolean>;
+  needs?: Partial<CropNeeds>;
   fertiliser: FertiliserPlan | null;
 };
 

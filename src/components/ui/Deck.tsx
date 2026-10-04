@@ -62,6 +62,8 @@ export function Deck({
   children,
   label,
   glow = "leaf",
+  focusIndex,
+  onActiveChange,
   className,
 }: {
   /** One node per pallet. */
@@ -70,12 +72,39 @@ export function Deck({
   label: string;
   /** Which hue the pallets bloom in, in the dark. Nothing on paper. */
   glow?: "leaf" | "haldi";
+  /**
+   * Bring this pallet to the centre. For a deck whose centred pallet *is* the
+   * selection — the recommendation board, where the crop in the middle is the
+   * one opened below — so a tap on a side pallet and a swipe end in the same
+   * place.
+   */
+  focusIndex?: number;
+  /** Told which pallet settled in the centre, after a swipe or a `focusIndex`. */
+  onActiveChange?: (index: number) => void;
   className?: string;
 }) {
   const reduced = useReducedMotion();
   const scroller = useRef<HTMLUListElement>(null);
   const [active, setActive] = useState(0);
   const id = useId();
+
+  // Mirrors of `active` and the callback, for the observer, which is set up
+  // once and must not be torn down every render to see fresh values.
+  const activeRef = useRef(0);
+  const onActiveRef = useRef(onActiveChange);
+  useEffect(() => {
+    onActiveRef.current = onActiveChange;
+  }, [onActiveChange]);
+
+  /**
+   * Where a programmatic scroll is heading. A smooth scroll from the first
+   * pallet to the fourth passes the second and third on the way, and the
+   * observer reports both — so while a target is set, only the target itself
+   * is passed on. Otherwise a tap would select every crop it scrolled past,
+   * and each of those selections would try to scroll back.
+   */
+  const target = useRef<number | null>(null);
+  const targetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   /**
    * Which pallet is centred. Rooted on the scroller with a tall, narrow slice
@@ -97,7 +126,13 @@ export function Deck({
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
         if (!centred) return;
         const index = cards.indexOf(centred.target as HTMLElement);
-        if (index >= 0) setActive(index);
+        if (index < 0) return;
+        setActive(index);
+        activeRef.current = index;
+        if (target.current === null || target.current === index) {
+          target.current = null;
+          onActiveRef.current?.(index);
+        }
       },
       { root, rootMargin: "0px -45%", threshold: [0.15, 0.5, 0.9] },
     );
@@ -110,9 +145,25 @@ export function Deck({
     const root = scroller.current;
     if (!root) return;
     const cards = root.querySelectorAll<HTMLElement>("[data-pallet]");
-    const target = cards[Math.max(0, Math.min(to, cards.length - 1))];
-    target?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    const index = Math.max(0, Math.min(to, cards.length - 1));
+    target.current = index;
+    // A scroll that never lands on its target — interrupted by a swipe, or
+    // too short to move the observer — must not hold every later report back.
+    clearTimeout(targetTimer.current);
+    targetTimer.current = setTimeout(() => {
+      target.current = null;
+    }, 1200);
+    cards[index]?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, []);
+
+  useEffect(() => () => clearTimeout(targetTimer.current), []);
+
+  // Asked from outside to centre a pallet. Ignored when it already is, which
+  // is also what stops a swipe's own report from bouncing back as a scroll.
+  useEffect(() => {
+    if (focusIndex == null || focusIndex === activeRef.current) return;
+    go(focusIndex);
+  }, [focusIndex, go]);
 
   const count = children.length;
 

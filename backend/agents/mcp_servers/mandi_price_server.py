@@ -96,10 +96,9 @@ def mandi_prices(
     if not api_key:
         return {
             "available": False,
-            "reason": (
-                "DATA_GOV_IN_API_KEY is not configured on this server, so "
-                "government price data could not be requested."
-            ),
+            # Worded for the page, because the agent copies it there: the
+            # setting's name meant nothing to a farmer reading the report.
+            "reason": "Government market prices are not connected yet, so none were looked up.",
             "records": [],
         }
 
@@ -117,9 +116,18 @@ def mandi_prices(
         response.raise_for_status()
         payload = response.json()
     except Exception as exc:
+        # Never `str(exc)`: an httpx error carries the request URL, and this
+        # API takes its key only in the query string — so the message would
+        # put the key into the tool result, and from there into a published
+        # report. The status code is all the reason anyone needs.
+        status = getattr(getattr(exc, "response", None), "status_code", None)
         return {
             "available": False,
-            "reason": f"Government price API request failed: {exc}",
+            "reason": (
+                f"The government price service answered {status}."
+                if status
+                else "The government price service could not be reached."
+            ),
             "records": [],
         }
 

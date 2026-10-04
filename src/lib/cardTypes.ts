@@ -220,6 +220,8 @@ export type TopicReport = {
   needs_review?: boolean;
   reviewer_concerns?: string[];
   generated_at?: string;
+  /** The model the agents ran on, e.g. `apac.amazon.nova-pro-v1:0`. */
+  model?: string;
 };
 
 export type InsightsResponse =

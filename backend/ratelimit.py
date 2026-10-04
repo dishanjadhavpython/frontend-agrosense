@@ -48,6 +48,10 @@ LIMITS: dict[str, int] = {
     # farmer's real questions across a day, not enough to farm out as a free
     # model endpoint.
     "chat": 80,
+    # One tap on "get the latest" is one research run (four model calls and
+    # five MCP subprocesses), and a fresh topic is skipped without costing
+    # anything — so this caps the expensive taps, not the browsing.
+    "research": 30,
 }
 
 WINDOW_SECONDS = 24 * 60 * 60

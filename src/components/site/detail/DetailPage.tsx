@@ -7,6 +7,7 @@ import { ArrowDown, ArrowLeft, ArrowRight } from "lucide-react";
 import { useLang } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import type { Bi, Fact } from "@/data/prediction";
+import { LATEST_EVENT } from "./Insights";
 
 /**
  * The shape every prediction detail page takes.
@@ -170,9 +171,12 @@ export function DetailPage({
         {insights ? (
           <a
             href="#updates"
+            // A request as well as a scroll: the panel starts the agents when
+            // the topic has no report or a stale one (see `Insights.tsx`).
+            onClick={() => window.dispatchEvent(new Event(LATEST_EVENT))}
             className="mt-4 inline-flex min-h-11 items-center gap-2 text-[15px] font-semibold text-leaf underline decoration-leaf/35 underline-offset-4 transition-colors hover:decoration-leaf"
           >
-            {mr ? "ताजी माहिती बघा" : "See the latest updates"}
+            {mr ? "ताजी माहिती मिळवा" : "Get the latest updates"}
             <ArrowDown className="size-4" strokeWidth={2.2} aria-hidden />
           </a>
         ) : null}

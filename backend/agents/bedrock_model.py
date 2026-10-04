@@ -61,6 +61,13 @@ DEFAULT_MAX_TOKENS = 8192
 _TOOL_NAME = re.compile(r"[^a-zA-Z0-9_-]")
 
 
+def _is_sampling_fault(exc: Exception) -> bool:
+    """A transient generation error worth retrying unchanged, as opposed to a
+    request Bedrock rejected (validation, access, quota)."""
+    text = str(exc)
+    return text.startswith("ModelErrorException") or "invalid sequence as part of ToolUse" in text
+
+
 def _safe_tool_name(name: str) -> str:
     """Bedrock tool names allow `[a-zA-Z0-9_-]{1,64}`; MCP names usually comply."""
     return _TOOL_NAME.sub("_", name)[:64] or "tool"
@@ -358,7 +365,22 @@ class BedrockConverseModel(Model):
                 relaxed = dict(request)
                 relaxed["toolConfig"] = {k: v for k, v in request["toolConfig"].items() if k != "toolChoice"}
                 return await asyncio.to_thread(converse, **relaxed)
-            raise
+            # Nova now and then emits a malformed tool-use block ("Model
+            # produced invalid sequence as part of ToolUse"). That is a
+            # sampling fault, not a bad request — the same request usually
+            # succeeds on a second draw — and letting it propagate failed the
+            # whole topic, throwing away every search and fetch the run had
+            # already paid for. Twice more, briefly spaced, then give up.
+            if _is_sampling_fault(exc):
+                for delay in (1.0, 3.0):
+                    await asyncio.sleep(delay)
+                    try:
+                        return await asyncio.to_thread(converse, **request)
+                    except BedrockUnavailable as again:
+                        if not _is_sampling_fault(again):
+                            raise
+                        exc = again
+            raise exc
 
     @staticmethod
     def _from_converse(response: dict[str, Any]) -> ChatCompletionMessage:

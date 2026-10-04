@@ -13,8 +13,6 @@ import {
   MapPin,
   Sprout,
   Sun,
-  TrendingDown,
-  TrendingUp,
   Wind,
 } from "lucide-react";
 import { useLang } from "@/lib/i18n";
@@ -35,10 +33,8 @@ import {
   levelOf,
   past,
   pctOf,
-  rainCeiling,
-  tempBounds,
+  rainTotal,
   weekdayEn,
-  weekdayInitial,
   weekdayMr,
   type Condition,
   type Day,
@@ -47,25 +43,30 @@ import {
 } from "@/data/weather";
 
 /**
- * Weather, read the way a farmer needs it.
+ * Weather, kept to what a farmer acts on.
  *
- * A consumer weather app answers "will it rain on me". This has to answer
- * something harder — whether the field has enough water — and the two are not
- * the same question. 72 mm fell here over ten days and the crop still ends next
- * week 26 mm short, because evapotranspiration took more out than the sky is
- * about to put back. That gap is the section.
+ * A consumer weather app answers "will it rain on me". A farmer is asking four
+ * narrower things, and the board is those four and nothing else:
  *
- * Built as a board of separate cards rather than one long panel. Six readings
- * that have nothing to do with each other — air against soil against wind —
- * were sharing one surface and reading as a single table nobody would scan;
- * given a card each, with a fill behind the number and a word for where it
- * sits, each one becomes a thing you can take in on its own and move past.
+ *   1. What is it like now?                         — the sky
+ *   2. Do I need to water this week?                — the week's water
+ *   3. Can I spray today, and is disease coming?    — wind, damp air, topsoil
+ *   4. What is each of the next seven days doing?   — the week, day by day
  *
- * Colour is the product's green and turmeric throughout. Rainfall is green,
- * which is what `globals.css` always intended — the five-step leaf ramp exists
- * to drive "the rainfall calendar" (research and plan/PLAN.md §3) and this is it. Turmeric
- * carries heat and air. Pomegranate appears only where something is wrong,
- * which is how it keeps meaning anything.
+ * What came off is what a farmer could not act on: the evapotranspiration
+ * reading on its own card, the water-in / water-out ledger, and an eighteen-
+ * day rain-and-temperature ribbon that needed a legend of four symbols to
+ * read. The numbers behind them still decide the verdicts here — the week's
+ * water is rain against the crop's own use, which is the ET₀ — but they are
+ * said as an answer ("about 26 mm short — plan to irrigate"), not handed over
+ * to be worked out.
+ *
+ * Every verdict is a word or a short phrase beside a real number, never a
+ * paragraph. The advisory sentences that used to sit under this board came
+ * off it on request; they are parked as `advice()` in `data/weather.ts`.
+ *
+ * Colour is the product's green and turmeric throughout. Pomegranate appears
+ * only where something is wrong, which is how it keeps meaning anything.
  */
 
 export function WeatherPanel({ weather }: { weather: Weather | null }) {
@@ -78,13 +79,13 @@ export function WeatherPanel({ weather }: { weather: Weather | null }) {
       eyebrow={t("weather")}
       heading={
         mr
-          ? "तुमच्या भागातलं हवामान, तुमच्या पिकांसाठी"
-          : "Weather for this location, for your crops"
+          ? "या आठवड्याचं हवामान, तुमच्या शेतासाठी"
+          : "This week's weather, for your farm"
       }
       lede={
         mr
-          ? "मागच्या दहा दिवसांत किती पाऊस पडला आणि पुढच्या सात दिवसांत किती पडणार — आणि त्यातलं किती पिकाला खरंच मिळणार."
-          : "How much rain fell over the last ten days, how much is coming in the next seven — and how much of it your crop actually gets to keep."
+          ? "आजचं हवामान, या आठवड्यात पाणी द्यावं लागेल का, फवारणी करता येईल का — आणि पुढचे सात दिवस."
+          : "Today's weather, whether you need to water this week, whether you can spray — and the next seven days."
       }
     >
       <Reveal className="mt-10">
@@ -168,8 +169,6 @@ function Card({
 }
 
 function Board({ weather }: { weather: Weather }) {
-  const { days } = weather;
-
   return (
     <motion.div
       className="space-y-4 sm:space-y-5"
@@ -180,25 +179,20 @@ function Board({ weather }: { weather: Weather }) {
     >
       <div className="grid gap-4 sm:gap-5 lg:grid-cols-[1.55fr_1fr]">
         <SkyHero weather={weather} />
-        <BalanceFeature days={days} />
+        <WaterWeek days={weather.days} />
       </div>
 
-      <MetricRow weather={weather} />
-      <RainCard days={days} />
+      <Readings weather={weather} />
+      <WeekStrip days={weather.days} />
     </motion.div>
   );
 }
 
 /* ---- The sky ------------------------------------------------------------
-   The one place the reference boards were right: weather is a thing you look
-   at, and a sky says more about today than an icon does.
-
-   Same treatment `CardUpload` proved — photo bled edge to edge under a
-   measured scrim, `chalk`/`mist` type on it. That pair sits outside the theme
-   swap on purpose: a photograph is a lit surface with no dark mode, so type on
-   it can't flip either. Until the photograph is delivered the same scrim sits
-   over the ploughed-rows surface every awaiting image on this site falls back
-   to, so nothing moves when the file lands. */
+   Weather is a thing you look at, and a sky says more about today than an
+   icon does. Photo bled edge to edge under a measured scrim, `chalk`/`mist`
+   type on it — a photograph is a lit surface with no dark mode, so the type
+   on it can't flip either. */
 
 const SKY = "weather/monsoon-sky.jpg";
 const WATER = "weather/water.jpg";
@@ -231,8 +225,6 @@ function SkyHero({ weather }: { weather: Weather }) {
           fill
           sizes="(max-width: 1024px) 100vw, 760px"
           aria-hidden
-          // A slow drift on hover. The photograph is the only thing in the
-          // section big enough to carry movement without becoming noise.
           className="object-cover transition-transform duration-[1.2s] ease-[var(--ease-regur)] group-hover:scale-105"
         />
       ) : (
@@ -242,9 +234,6 @@ function SkyHero({ weather }: { weather: Weather }) {
             {
               backgroundImage:
                 "linear-gradient(160deg, var(--color-leaf-4) 0%, var(--color-leaf-5) 55%, var(--color-night-rise) 100%)",
-              // Furrows are lit on a dark field, and this band is dark in both
-              // themes — so the line colour is set here rather than inherited,
-              // which would draw it near-black on near-black in light mode.
               "--field-row-line": "rgba(246,230,200,0.10)",
               "--field-row-pitch": "26px",
             } as CSSProperties
@@ -261,12 +250,6 @@ function SkyHero({ weather }: { weather: Weather }) {
         }}
         aria-hidden
       />
-
-      {process.env.NODE_ENV !== "production" && !sky ? (
-        <span className="absolute top-3 right-4 z-10 font-mono text-[11px] text-mist/70">
-          {SKY}
-        </span>
-      ) : null}
 
       <div className="relative flex h-full flex-col justify-between gap-6 p-6 sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
@@ -296,12 +279,19 @@ function SkyHero({ weather }: { weather: Weather }) {
               {t("wxFeelsLike")} {Math.round(now.feels)}° ·{" "}
               {Math.round(today.tMin)}–{Math.round(today.tMax)}° {mr ? "आज" : "today"}
             </p>
+            <p className="mt-1 flex items-center gap-1.5 text-[15px] text-mist">
+              <CloudRain className="size-4 shrink-0" strokeWidth={1.9} aria-hidden />
+              {today.rain >= 0.1
+                ? mr
+                  ? `आज ${today.rain.toFixed(1)} मिमी पाऊस`
+                  : `${today.rain.toFixed(1)} mm of rain today`
+                : mr
+                  ? "आज पाऊस नाही"
+                  : "No rain today"}
+            </p>
           </div>
 
-          {/* The API's own clock, never the rendering machine's. It is honest
-              about how stale an hourly-revalidated page is, and a relative
-              "2 hours ago" would differ between server and client on every
-              single render. */}
+          {/* The API's own clock, never the rendering machine's. */}
           <p className="tnum text-[13px] text-mist">
             {mr ? "वेळ" : "as of"} {hhmm(now.time)}
           </p>
@@ -311,20 +301,33 @@ function SkyHero({ weather }: { weather: Weather }) {
   );
 }
 
-/* ---- The water balance --------------------------------------------------
-   The one card that breaks the paper rhythm, because it carries the one
-   number the whole section exists to produce. Deep standing-crop green on
-   paper, new-growth lime in the dark — so the type on it flips where the
-   ground does, `chalk` on the deep green and `on-light` on the lime. */
+/* ---- The week's water ---------------------------------------------------
+   The one decision on the board, so the one card that breaks the paper
+   rhythm. Rain coming against what the crop will use — the reference
+   evapotranspiration — said as an answer rather than as two numbers to
+   subtract. Deep standing-crop green on paper, lime in the dark, so the type
+   flips where the ground does. */
 
-function BalanceFeature({ days }: { days: Day[] }) {
-  const { t, lang } = useLang();
+/** Over one acre, a millimetre of water is 4,047 litres. */
+const LITRES_PER_MM_ACRE = 4047;
+
+function WaterWeek({ days }: { days: Day[] }) {
+  const { lang } = useLang();
   const mr = lang === "mr";
-  const before = balance(past(days));
   const next = balance(ahead(days));
-  const short = next.net < 0;
-
+  const fell = rainTotal(past(days));
+  // Rounded before subtracting, so the sentence's own arithmetic holds:
+  // "uses 38, 1 coming, 37 short" — not 38 short off the unrounded values.
+  const use = Math.round(next.et0);
+  const coming = Math.round(next.rain);
+  const short = Math.max(0, use - coming);
   const water = photo(WATER);
+
+  // Within ten millimetres either way is a week the field rides out.
+  const verdict: "fine" | "light" | "irrigate" =
+    short <= 0 ? "fine" : short <= 10 ? "light" : "irrigate";
+
+  const litres = Math.round((short * LITRES_PER_MM_ACRE) / 1000) * 1000;
 
   return (
     <Card className="border-transparent">
@@ -336,12 +339,6 @@ function BalanceFeature({ days }: { days: Day[] }) {
         }}
         aria-hidden
       />
-      {/* Water, for the card about water — but only its structure. The
-          photograph is a saturated blue and this product has no blue in it, so
-          it is desaturated and dimmed and laid over the green at a low alpha:
-          you read splash and droplets, you do not read a blue picture. Dimmed
-          rather than merely faded because the bright foam, left alone, put the
-          14px line under the number below AA on the light theme. */}
       {water ? (
         <Image
           src={water}
@@ -352,44 +349,53 @@ function BalanceFeature({ days }: { days: Day[] }) {
           className="object-cover opacity-[0.18] brightness-[0.72] saturate-[0.35] transition-transform duration-[1.4s] ease-[var(--ease-regur)] group-hover:scale-105 dark:opacity-[0.14] dark:brightness-[0.9]"
         />
       ) : null}
-      {/* A soft bloom that tracks the hover, so the card feels lit rather than
-          painted. Pure decoration, and the only one on the board. */}
-      <div
-        className="absolute -top-16 -right-10 size-48 rounded-full opacity-0 blur-3xl transition-opacity duration-500 group-hover:opacity-60"
-        style={{ background: "var(--color-haldi)" }}
-        aria-hidden
-      />
 
-      <div className="relative flex h-full flex-col gap-5 p-6 text-chalk sm:p-7 dark:text-on-light">
-        <div>
-          <p className="eyebrow text-chalk/70 dark:text-on-light/70">
-            {t("wxBalance")}
-          </p>
-          <p className="mt-3 flex items-baseline gap-1.5">
-            <span className="tnum text-[2.75rem] leading-none font-semibold">
-              {next.net > 0 ? "+" : next.net < 0 ? "−" : ""}
-              {Math.abs(Math.round(next.net))}
-            </span>
-            <span className="font-mono text-[13px] opacity-75">mm</span>
-          </p>
-          <p className="mt-2 text-[14px] leading-snug opacity-85">
-            {short
-              ? mr
-                ? "पुढच्या सात दिवसांत एवढं पाणी कमी पडेल"
-                : "the shortfall over the next seven days"
-              : mr
-                ? "पुढच्या सात दिवसांत एवढं पाणी शिल्लक राहील"
-                : "the surplus over the next seven days"}
-          </p>
-        </div>
+      <div className="relative flex h-full flex-col gap-4 p-6 text-chalk sm:p-7 dark:text-on-light">
+        <p className="eyebrow text-chalk/70 dark:text-on-light/70">
+          {mr ? "या आठवड्यात पाणी" : "Water this week"}
+        </p>
 
-        <dl className="mt-auto grid grid-cols-2 gap-x-4 gap-y-3 border-t border-chalk/20 pt-5 text-[13px] dark:border-on-light/20">
-          <Split label={t("wxLast10")} value={before.net} />
-          <Split label={t("wxNext7")} value={next.net} />
-          <div className="col-span-2 flex items-center justify-between opacity-80">
-            <dt>{t("wxWaterIn")} / {t("wxWaterOut")}</dt>
-            <dd className="tnum">
-              {Math.round(next.rain)} / {Math.round(next.et0)} mm
+        <p className="text-[1.6rem] leading-tight font-semibold font-[family-name:var(--font-display)]">
+          {verdict === "fine"
+            ? mr ? "पाणी देण्याची गरज नाही" : "No need to irrigate"
+            : verdict === "light"
+              ? mr ? "थोडं पाणी लागू शकतं" : "A light watering may help"
+              : mr ? "पाणी देण्याची तयारी ठेवा" : "Plan to irrigate"}
+        </p>
+
+        <p className="text-[14.5px] leading-snug opacity-90">
+          {verdict === "fine"
+            ? mr
+              ? `पुढच्या ७ दिवसांत ${coming} मिमी पाऊस — पिकाला लागणाऱ्या ${use} मिमीपेक्षा जास्त.`
+              : `${coming} mm of rain is coming in 7 days — as much as the ${use} mm your crop will use, or more.`
+            : mr
+              ? `पुढच्या ७ दिवसांत पीक ${use} मिमी पाणी वापरेल, पण पाऊस फक्त ${coming} मिमी — सुमारे ${short} मिमी कमी.`
+              : `Your crop will use ${use} mm over 7 days and only ${coming} mm of rain is coming — about ${short} mm short.`}
+        </p>
+
+        <dl className="mt-auto grid grid-cols-2 gap-x-4 gap-y-3 border-t border-chalk/20 pt-4 text-[13px] dark:border-on-light/20">
+          <div>
+            <dt className="opacity-75">{mr ? "मागच्या १० दिवसांत पडला" : "Fell in the last 10 days"}</dt>
+            <dd className="tnum mt-1 text-[1.05rem] font-semibold">
+              {Math.round(fell)} <span className="font-mono text-[11px] font-normal opacity-70">mm</span>
+            </dd>
+          </div>
+          <div>
+            <dt className="opacity-75">
+              {verdict === "fine"
+                ? mr ? "पुढच्या ७ दिवसांत येणार" : "Coming in the next 7 days"
+                : mr ? "कमी पडणारं पाणी, प्रति एकर" : "Shortfall, per acre"}
+            </dt>
+            <dd className="tnum mt-1 text-[1.05rem] font-semibold">
+              {verdict === "fine" ? (
+                <>
+                  {coming} <span className="font-mono text-[11px] font-normal opacity-70">mm</span>
+                </>
+              ) : mr ? (
+                `≈ ${litres.toLocaleString("en-IN")} लिटर`
+              ) : (
+                `≈ ${litres.toLocaleString("en-IN")} litres`
+              )}
             </dd>
           </div>
         </dl>
@@ -398,26 +404,10 @@ function BalanceFeature({ days }: { days: Day[] }) {
   );
 }
 
-function Split({ label, value }: { label: string; value: number }) {
-  const n = Math.round(value);
-  const Icon = n < 0 ? TrendingDown : TrendingUp;
-  return (
-    <div>
-      <dt className="opacity-75">{label}</dt>
-      <dd className="tnum mt-1 flex items-center gap-1.5 text-[1.05rem] font-semibold">
-        <Icon className="size-4 shrink-0 opacity-80" strokeWidth={2.1} aria-hidden />
-        {n > 0 ? "+" : n < 0 ? "−" : ""}
-        {Math.abs(n)}
-        <span className="font-mono text-[11px] font-normal opacity-70">mm</span>
-      </dd>
-    </div>
-  );
-}
-
-/* ---- The five readings --------------------------------------------------
-   A card each. The fill behind every number is the point: "21 km/h" is a fact
-   nobody can place, and the same number three-quarters along its range, with
-   the word "strong" under it, is a reading. */
+/* ---- Three readings -----------------------------------------------------
+   One per decision: wind decides spraying, damp air decides disease, the
+   topsoil decides whether the last rain is still there. A fill behind each
+   number places it in its range, and a few words say what that means. */
 
 type Tone = "leaf" | "haldi";
 
@@ -431,38 +421,59 @@ const toneFill: Record<Tone, string> = {
   haldi: "bg-haldi",
 };
 
-function MetricRow({ weather }: { weather: Weather }) {
-  const { t, lang } = useLang();
+function Readings({ weather }: { weather: Weather }) {
+  const { lang } = useLang();
   const mr = lang === "mr";
   const { now, days } = weather;
   const today = days[TODAY_INDEX];
-  const ceiling = rainCeiling(days);
 
   const word = (level: Level, low: string, ok: string, high: string) =>
     level === "low" ? low : level === "high" ? high : ok;
 
+  // Spray drifts above ~15 km/h and washes off in rain.
+  const rainingToday = today.rain >= 2;
+  const sprayNote = rainingToday
+    ? mr ? "आज पाऊस — फवारणी वाहून जाईल" : "Rain today — spray would wash off"
+    : word(
+        levelOf(now.wind, 3, 15),
+        mr ? "शांत — फवारणीस योग्य" : "Calm — good for spraying",
+        mr ? "फवारणीस योग्य" : "Fine for spraying",
+        mr ? "जोरात — फवारणी टाळा" : "Too windy to spray",
+      );
+
   return (
-    // Two up even on a phone. Stacked one per row, five readings turned into a
-    // column of scrolling nobody would reach the end of.
-    <div className="grid grid-cols-2 gap-3 sm:gap-5 lg:grid-cols-3 xl:grid-cols-5">
+    // Three across from a tablet up; stacked one per row a phone shows each
+    // reading at a size it can be read at.
+    <div className="grid gap-3 sm:grid-cols-3 sm:gap-5">
+      <Metric
+        icon={Wind}
+        tone="haldi"
+        label={mr ? "वारा — फवारणीसाठी" : "Wind — for spraying"}
+        value={Math.round(now.wind)}
+        unit="km/h"
+        pct={pctOf(now.wind, 40)}
+        note={sprayNote}
+        warn={rainingToday || now.wind > 15}
+      />
       <Metric
         icon={Droplets}
         tone="leaf"
-        label={t("wxAirMoisture")}
+        label={mr ? "हवेतला ओलावा — रोगासाठी" : "Air moisture — for disease"}
         value={Math.round(now.humidity)}
         unit="%"
         pct={pctOf(now.humidity, 100)}
         note={word(
           levelOf(now.humidity, 40, 80),
-          mr ? "कोरडी हवा" : "Dry air",
-          mr ? "ठीक आहे" : "Comfortable",
-          mr ? "दमट — रोगाचा धोका" : "Humid — disease risk",
+          mr ? "कोरडी हवा — रोगाचा धोका कमी" : "Dry air — low disease risk",
+          mr ? "रोगाचा धोका कमी" : "Low disease risk",
+          mr ? "दमट — बुरशीजन्य रोगाचा धोका" : "Humid — fungal disease risk",
         )}
+        warn={now.humidity > 80}
       />
       <Metric
         icon={Sprout}
         tone="leaf"
-        label={t("wxSoilMoisture")}
+        label={mr ? "वरच्या मातीतला ओलावा — पाण्यासाठी" : "Topsoil moisture — for watering"}
         // Volumetric water content, shown as percent of soil volume. The raw
         // m³/m³ is the same number and means nothing to anyone with a spade.
         value={now.soil === null ? "—" : Math.round(now.soil * 100)}
@@ -470,57 +481,15 @@ function MetricRow({ weather }: { weather: Weather }) {
         pct={now.soil === null ? 0 : pctOf(now.soil, 0.5)}
         note={
           now.soil === null
-            ? "—"
+            ? mr ? "आत्ता माहिती नाही" : "Not available right now"
             : word(
                 levelOf(now.soil, 0.15, 0.4),
-                mr ? "कोरडी माती" : "Drying out",
-                mr ? "पुरेसा ओलावा" : "Well watered",
-                mr ? "भरपूर ओलावा" : "Near saturation",
+                mr ? "वरची माती कोरडी" : "Topsoil drying out",
+                mr ? "पुरेसा ओलावा" : "Moist enough",
+                mr ? "भरपूर ओलावा — पाणी देऊ नका" : "Very wet — hold the water",
               )
         }
-      />
-      <Metric
-        icon={CloudRain}
-        tone="leaf"
-        label={t("wxRainToday")}
-        value={today.rain.toFixed(1)}
-        unit="mm"
-        pct={pctOf(today.rain, ceiling)}
-        note={word(
-          levelOf(today.rain, 1, 20),
-          mr ? "जवळपास कोरडा दिवस" : "Barely anything",
-          mr ? "बरा पाऊस" : "A useful fall",
-          mr ? "जोरदार पाऊस" : "Heavy",
-        )}
-      />
-      <Metric
-        icon={Wind}
-        tone="haldi"
-        label={t("wxWind")}
-        value={Math.round(now.wind)}
-        unit="km/h"
-        pct={pctOf(now.wind, 40)}
-        note={word(
-          levelOf(now.wind, 10, 25),
-          mr ? "शांत — फवारणीस योग्य" : "Still — good for spraying",
-          mr ? "साधारण वारा" : "Moderate",
-          mr ? "जोरात — फवारणी टाळा" : "Too strong to spray",
-        )}
-      />
-      <Metric
-        icon={Sun}
-        tone="haldi"
-        label={t("wxEt0")}
-        value={today.et0.toFixed(1)}
-        unit="mm"
-        pct={pctOf(today.et0, 8)}
-        note={word(
-          levelOf(today.et0, 3, 5.5),
-          mr ? "कमी बाष्पीभवन" : "Losing little",
-          mr ? "नेहमीसारखं" : "Typical for the season",
-          mr ? "जास्त — पाणी लवकर उडतंय" : "Drying fast",
-        )}
-        className="max-lg:col-span-2 lg:max-xl:col-span-3"
+        warn={now.soil !== null && now.soil < 0.15}
       />
     </div>
   );
@@ -534,6 +503,7 @@ function Metric({
   unit,
   pct,
   note,
+  warn = false,
   className,
 }: {
   icon: typeof Sun;
@@ -543,6 +513,8 @@ function Metric({
   unit: string;
   pct: number;
   note: string;
+  /** The reading says to hold off. The note goes red; nothing else does. */
+  warn?: boolean;
   className?: string;
 }) {
   const { reduced } = useCardMotion();
@@ -571,7 +543,6 @@ function Metric({
           ) : null}
         </p>
 
-        {/* Where that number sits in the range it lives in. */}
         <div className="mt-3.5 h-1.5 overflow-hidden rounded-full bg-leaf-1">
           <motion.div
             className={cn("h-full rounded-full", toneFill[tone])}
@@ -581,295 +552,89 @@ function Metric({
             transition={reduced ? { duration: 0 } : { duration: 0.8, ease: EASE }}
           />
         </div>
-        <p className="mt-2.5 text-[13px] leading-snug text-ink-soft">{note}</p>
+        <p className={cn("mt-2.5 text-[14px] leading-snug font-medium", warn ? "text-anar" : "text-ink-soft")}>
+          {note}
+        </p>
       </div>
     </Card>
   );
 }
 
-/* ---- The eighteen days --------------------------------------------------
-   One column per day carrying both rows, so rainfall and temperature share a
-   single date axis by construction rather than by two charts being lined up
-   and drifting apart at the next breakpoint.
+/* ---- The week, day by day -----------------------------------------------
+   Today and the seven after it, one tile each: the sky, the day's high and
+   low, and the rain. Eight tiles fit across a laptop; on a phone the row
+   scrolls sideways with the tiles snapping into place, rather than squeezing
+   eight days into a width that fits four. A day past the heat threshold is
+   the only one marked in red. */
 
-   Solid bars happened. Hatched bars haven't. */
-
-function RainCard({ days }: { days: Day[] }) {
-  const { t, lang } = useLang();
+function WeekStrip({ days }: { days: Day[] }) {
+  const { lang } = useLang();
   const mr = lang === "mr";
-  const { reduced } = useCardMotion();
+  const week = days.slice(TODAY_INDEX);
+  const ceiling = Math.max(10, ...week.map((d) => d.rain));
 
-  const ceiling = rainCeiling(days);
-  const temp = tempBounds(days);
-  const fell = Math.round(past(days).reduce((s, d) => s + d.rain, 0));
-  const due = Math.round(ahead(days).reduce((s, d) => s + d.rain, 0));
-
-  const grow: Variants = {
-    rest: { height: "0%" },
-    grown: (i: number) => ({
-      height: "var(--bar-h)",
-      transition: reduced ? { duration: 0 } : { duration: 0.7, delay: 0.022 * i, ease: EASE },
-    }),
-  };
   return (
     <Card hover={false}>
-      <noscript>
-        <style>{`[data-rainbar]{height:var(--bar-h)!important}[data-tempbar]{opacity:1!important;transform:none!important}`}</style>
-      </noscript>
-
-      <div className="p-5 sm:p-7">
-        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
-          <div>
-            <p className="eyebrow text-ink-mute">{t("wxRainfall")}</p>
-            <p className="mt-3 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-              <span className="tnum text-[2rem] leading-none font-semibold text-leaf">
-                {fell}
-              </span>
-              <span className="font-mono text-[12px] text-ink-mute">mm</span>
-              <span className="text-[14px] text-ink-soft">
-                {mr ? "मागच्या १० दिवसांत पडला" : "fell over the last 10 days"}
-              </span>
-            </p>
-            <p className="mt-1.5 text-[14px] text-ink-soft">
-              <span className="tnum font-semibold text-ink">{due} mm</span>{" "}
-              {mr ? "पुढच्या ७ दिवसांत अपेक्षित" : "expected over the next 7"}
-            </p>
-          </div>
-          <p className="tnum text-[12px] text-ink-mute">
-            0 – {ceiling} mm · {temp.lo}–{temp.hi} °C
+      <div className="p-5 sm:p-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+          <p className="eyebrow text-ink-mute">{mr ? "पुढचे ७ दिवस" : "The next 7 days"}</p>
+          <p className="text-[13px] text-ink-mute">
+            {mr ? "दिवसाचं कमाल / किमान तापमान आणि पाऊस" : "Each day's high / low, and rain"}
           </p>
         </div>
 
-        <div className="relative mt-7">
-          {/* Today, and the line between what is known and what is expected —
-              both drawn once across the whole stack rather than per column, so
-              the rain bars, the temperature ribbon and the dates all get the
-              same mark in the same place. */}
-          <span
-            className="pointer-events-none absolute inset-y-0 z-0 rounded-md bg-haldi/12"
-            style={{
-              left: `${(TODAY_INDEX / days.length) * 100}%`,
-              width: `${(1 / days.length) * 100}%`,
-            }}
-            aria-hidden
-          />
-          <span
-            className="pointer-events-none absolute inset-y-0 z-10 w-px bg-ink/25"
-            style={{ left: `${((TODAY_INDEX + 1) / days.length) * 100}%` }}
-            aria-hidden
-          />
-
-          <motion.ol
-            className="relative grid"
-            style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
-            initial="rest"
-            whileInView="grown"
-            viewport={{ once: true, margin: "-10% 0px" }}
-          >
-            {days.map((d, i) => {
-              const forecast = d.when === "ahead";
-              const rainPct = Math.min(100, (d.rain / ceiling) * 100);
-
-              return (
-                <li
-                  key={d.date}
-                  className="group/day px-px"
-                  title={`${mr ? weekdayMr(d.date) : weekdayEn(d.date)} ${dayNumber(d.date)} · ${d.rain.toFixed(1)} mm · ${Math.round(d.tMin)}–${Math.round(d.tMax)}°C`}
-                >
-                  {/* A track behind every bar. Without it a 0.3 mm forecast is
-                      a three-pixel smudge floating in whitespace; with it, the
-                      column is visibly there and visibly nearly empty, which is
-                      the actual news. */}
-                  <div className="flex h-28 w-full items-end rounded-[3px] bg-leaf-1/55 transition-colors group-hover/day:bg-leaf-1 sm:h-32">
-                    <motion.div
-                      data-rainbar
-                      custom={i}
-                      variants={grow}
-                      style={
-                        {
-                          "--bar-h": `${rainPct}%`,
-                          // Denser toward the base — a column of water reads as
-                          // heavier at the bottom, and a flat fill doesn't.
-                          backgroundImage: forecast
-                            ? undefined
-                            : "linear-gradient(180deg, var(--color-leaf-3) 0%, var(--color-leaf-5) 100%)",
-                          "--hatch-ink":
-                            "color-mix(in oklab, var(--color-leaf) 70%, transparent)",
-                        } as CSSProperties
-                      }
-                      className={cn(
-                        "w-full rounded-[3px]",
-                        rainPct === 0 ? "min-h-px" : "min-h-[6px]",
-                        forecast && "hatch bg-leaf-1 ring-1 ring-leaf/30 ring-inset",
-                      )}
-                    />
-                  </div>
-                </li>
-              );
-            })}
-          </motion.ol>
-
-          <TempRibbon days={days} bounds={temp} />
-
-          <ol
-            className="relative mt-2 grid"
-            style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
-          >
-            {days.map((d) => (
-              <li key={d.date} className="flex flex-col items-center gap-0.5">
-                <span
-                  className={cn(
-                    "text-[10px] leading-none",
-                    d.when === "today"
-                      ? "font-semibold text-haldi-ink"
-                      : "text-ink-mute",
-                  )}
-                >
-                  {weekdayInitial(d.date, mr)}
-                </span>
-                <span className="tnum hidden text-[10px] leading-none text-ink-mute sm:block">
-                  {dayNumber(d.date)}
-                </span>
+        <ol className="hide-scrollbar -mx-1 mt-4 flex snap-x snap-mandatory gap-2.5 overflow-x-auto overscroll-x-contain px-1 pb-1 lg:grid lg:grid-cols-8 lg:overflow-visible">
+          {week.map((d) => {
+            const isToday = d.when === "today";
+            const Icon = conditionIcon[conditionOf(d.code)];
+            const hot = d.tMax >= HEAT_STRESS;
+            const rainPct = Math.min(100, (d.rain / ceiling) * 100);
+            return (
+              <li
+                key={d.date}
+                className={cn(
+                  "flex min-w-[6.25rem] shrink-0 snap-start flex-col items-center rounded-[18px] border px-2 py-3.5 text-center lg:min-w-0",
+                  isToday ? "border-haldi/50 bg-haldi-wash" : "border-line bg-paper",
+                )}
+              >
+                <p className={cn("text-[13px] font-semibold", isToday ? "text-haldi-ink" : "text-ink")}>
+                  {isToday ? (mr ? "आज" : "Today") : mr ? weekdayMr(d.date) : weekdayEn(d.date)}
+                </p>
+                <p className="tnum text-[11.5px] text-ink-mute">{dayNumber(d.date)}</p>
+                <Icon className="mt-2.5 size-7 text-ink-soft" strokeWidth={1.6} aria-hidden />
+                <p className="tnum mt-2.5 text-[15px] font-semibold text-ink">
+                  <span className={hot ? "text-anar" : undefined}>{Math.round(d.tMax)}°</span>
+                  <span className="ml-1 text-[13px] font-normal text-ink-mute">{Math.round(d.tMin)}°</span>
+                </p>
+                <div className="mt-2.5 h-1.5 w-full max-w-[4.5rem] overflow-hidden rounded-full bg-leaf-1">
+                  <div
+                    className="h-full rounded-full bg-leaf"
+                    style={{ width: `${d.rain >= 0.1 ? Math.max(6, rainPct) : 0}%` }}
+                  />
+                </div>
+                <p className="tnum mt-1.5 text-[12.5px] text-ink-soft">
+                  {d.rain >= 0.1
+                    ? `${d.rain.toFixed(d.rain < 10 ? 1 : 0)} mm`
+                    : mr ? "कोरडा" : "dry"}
+                </p>
+                {hot ? (
+                  <p className="mt-1 text-[11px] font-semibold text-anar">
+                    {mr ? "उष्ण" : "hot"}
+                  </p>
+                ) : null}
               </li>
-            ))}
-          </ol>
-        </div>
+            );
+          })}
+        </ol>
 
-        <div className="mt-4 flex items-baseline justify-between border-t border-line pt-3.5 text-[13px] text-ink-mute">
-          <span>← {t("wxLast10")}</span>
-          <span className="font-semibold text-haldi-ink">{t("wxToday")}</span>
-          <span>{t("wxNext7")} →</span>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] text-ink-mute">
-          <Key
-            className="h-3.5 w-5 rounded-[3px]"
-            style={{
-              backgroundImage:
-                "linear-gradient(180deg, var(--color-leaf-3) 0%, var(--color-leaf-5) 100%)",
-            }}
-          >
-            {mr ? "पडलेला पाऊस" : "Rain that fell"}
-          </Key>
-          <Key
-            className="hatch h-3.5 w-5 rounded-[3px] bg-leaf-1"
-            style={
-              {
-                "--hatch-ink": "color-mix(in oklab, var(--color-leaf) 60%, transparent)",
-              } as CSSProperties
-            }
-          >
-            {mr ? "अपेक्षित पाऊस" : "Rain expected"}
-          </Key>
-          <Key
-            className="h-3.5 w-5 rounded-[3px]"
-            style={{
-              background:
-                "linear-gradient(180deg, color-mix(in oklab, var(--color-haldi) 55%, transparent), color-mix(in oklab, var(--color-haldi) 14%, transparent))",
-              borderTop: "2px solid var(--color-haldi)",
-            }}
-          >
-            {mr ? "दिवसाचं कमी–जास्त तापमान" : "The day's low to high"}
-          </Key>
-          <Key className="size-2.5 rounded-full bg-anar">
-            {mr ? `${HEAT_STRESS}°C च्या वर` : `Above ${HEAT_STRESS}°C`}
-          </Key>
-        </div>
+        {week.some((d) => d.tMax >= HEAT_STRESS) ? (
+          <p className="mt-3 text-[12.5px] text-ink-mute">
+            {mr
+              ? `लाल आकडा म्हणजे ${HEAT_STRESS}°C च्या वर — पिकाला उष्णतेचा ताण. अशा दिवशी दुपारी पाणी देऊ नका.`
+              : `A red high is above ${HEAT_STRESS}°C — heat stress for the crop. Don't irrigate in that afternoon's heat.`}
+          </p>
+        ) : null}
       </div>
     </Card>
-  );
-}
-
-/**
- * Temperature as one continuous band, not eighteen separate marks.
- *
- * It was drawn as a bar per day and that was the weakest thing on the board:
- * overnight lows here barely move, so eighteen bars bottoming out at the same
- * place and topping out within four degrees of each other read as a row of
- * identical ticks carrying no information. Joined into a ribbon, the same
- * numbers become a shape — the dip on the 31st, when a storm dropped the
- * afternoon high by four degrees, is suddenly the obvious feature.
- *
- * `preserveAspectRatio="none"` stretches the viewBox to the grid's width so
- * the points land on the same columns as the bars above. That distorts
- * geometry, so the stroke is `non-scaling-stroke` and anything that has to
- * stay round is a positioned div rather than an SVG circle.
- */
-function TempRibbon({ days, bounds }: { days: Day[]; bounds: ReturnType<typeof tempBounds> }) {
-  const { reduced } = useCardMotion();
-  const n = days.length;
-
-  const r = (v: number) => Math.round(v * 1000) / 1000;
-  const x = (i: number) => r(((i + 0.5) / n) * 100);
-  const y = (v: number) => r(((bounds.hi - v) / bounds.span) * 100);
-
-  const highs = days.map((d, i) => `${x(i)},${y(d.tMax)}`);
-  const lows = days.map((d, i) => `${x(i)},${y(d.tMin)}`).reverse();
-  const band = [...highs, ...lows].join(" ");
-
-  return (
-    <motion.div
-      data-tempbar
-      className="relative mt-2 h-14 w-full sm:h-16"
-      style={{ transformOrigin: "bottom" }}
-      initial={{ opacity: 0, scaleY: 0.45 }}
-      whileInView={{ opacity: 1, scaleY: 1 }}
-      viewport={{ once: true, margin: "-10% 0px" }}
-      transition={reduced ? { duration: 0 } : { duration: 0.8, ease: EASE }}
-    >
-      <svg
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        className="h-full w-full overflow-visible"
-        aria-hidden
-      >
-        <defs>
-          <linearGradient id="wx-temp-band" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-haldi)" stopOpacity="0.55" />
-            <stop offset="100%" stopColor="var(--color-haldi)" stopOpacity="0.14" />
-          </linearGradient>
-        </defs>
-        <polygon points={band} fill="url(#wx-temp-band)" />
-        <polyline
-          points={highs.join(" ")}
-          fill="none"
-          stroke="var(--color-haldi)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-
-      {/* Only the days that break the heat threshold get a mark. A dot on all
-          eighteen would be the row of identical ticks again, one shape later. */}
-      {days.map((d, i) =>
-        d.tMax >= HEAT_STRESS ? (
-          <span
-            key={d.date}
-            className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-anar ring-2 ring-surface"
-            style={{ left: `${x(i)}%`, top: `${y(d.tMax)}%` }}
-            aria-hidden
-          />
-        ) : null,
-      )}
-    </motion.div>
-  );
-}
-
-function Key({
-  className,
-  style,
-  children,
-}: {
-  className: string;
-  style?: CSSProperties;
-  children: ReactNode;
-}) {
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span className={cn("shrink-0", className)} style={style} aria-hidden />
-      {children}
-    </span>
   );
 }
