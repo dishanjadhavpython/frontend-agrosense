@@ -130,7 +130,7 @@ def buy_links(item: str, category: str = "fertilizer") -> dict:
     write a shop URL that did not come from this tool: one that did not is one
     nobody checked.
     """
-    from ddgs import DDGS
+    from .search_backends import search
 
     item = (item or "").strip()
     if not item:
@@ -141,7 +141,7 @@ def buy_links(item: str, category: str = "fertilizer") -> dict:
     query = f"{item} {what} buy online India ({sites})"
 
     try:
-        raw = DDGS(timeout=8).text(query, max_results=_MAX_CANDIDATES)
+        raw = search(query, _MAX_CANDIDATES)
     except Exception as exc:
         return {
             "available": False,

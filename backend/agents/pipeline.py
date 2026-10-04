@@ -14,7 +14,7 @@ from .creator import create_report
 from .model_provider import AGENT_MODEL_NAME, agent_model
 from .planner import plan_batch
 from .research import research_topic
-from .reviewer import review_report, strip_unsourced_claims
+from .reviewer import review_report, strip_process_talk, strip_unsourced_claims
 from .schemas import ReviewResult, TopicReport
 from .topics import Topic
 from .videos import fallback_videos
@@ -67,6 +67,10 @@ async def process_topic(topic: Topic, research_focus: str | None) -> dict[str, A
             report, more_stripped = strip_unsourced_claims(report)
             stripped.extend(more_stripped)
             review = await review_report(topic, report)
+
+        # What the agents wrote about their own run, out of the farmer's text.
+        report, narration = strip_process_talk(report)
+        stripped.extend(narration)
 
         # A video for every report. The agent is asked to find one and often
         # does not call the tool; the creator can also drop what it was given.

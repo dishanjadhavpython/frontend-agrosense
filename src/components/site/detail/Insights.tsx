@@ -695,11 +695,12 @@ function WhereToBuy({ report, mr }: { report: TopicReport; mr: boolean }) {
           </p>
         </>
       ) : (
+        // The page's own sentence, not the agent's `buy_note`: that is English,
+        // and was once "could not be retrieved due to a tool error".
         <p className="text-[15px] leading-relaxed text-ink-mute">
-          {report.buy_note ||
-            (mr
-              ? "ओळखीच्या ऑनलाइन दुकानांत हे सापडलं नाही. गावातल्या कृषी सेवा केंद्रात विचारा."
-              : "No listing could be verified on a known seller. Ask your local agri-input dealer.")}
+          {mr
+            ? "ओळखीच्या ऑनलाइन दुकानांत हे सापडलं नाही. गावातल्या कृषी सेवा केंद्रात विचारा."
+            : "No listing could be verified on a known seller. Ask your local agri-input dealer."}
         </p>
       )}
     </Block>

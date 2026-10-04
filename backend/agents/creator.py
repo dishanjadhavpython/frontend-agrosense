@@ -26,6 +26,11 @@ plain English. Structure the output as:
   findings. Never invent a specific number that wasn't in the findings.
 - youtube_resources: copied from the research findings.
 - sources: copied from the research findings, every one of them.
+
+Never write about the research itself. No sentence anywhere in the report may
+mention tools, searches, APIs, errors, or anything that "could not be
+retrieved" — the page already tells the farmer when a section is empty, in
+their own language. If the findings have nothing for a field, leave it empty.
 """.strip()
 
 

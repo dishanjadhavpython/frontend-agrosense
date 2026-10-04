@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from agents import Agent, Runner
 
 from .model_provider import agent_model
@@ -72,6 +74,58 @@ def _tier_name(url: str) -> str:
     return {1: "authoritative", 2: "institutional", 3: "media", 9: "rejected"}[
         classification.tier
     ]
+
+
+#: Sentences about the run rather than the topic. On AWS the search engines
+#: refuse a data-centre address half the time, and the agents then wrote it up
+#: for the farmer — "Due to tool errors, specific market prices, varieties, and
+#: seed purchase links could not be retrieved." The page already says when a
+#: section is empty, in the farmer's language; this sentence is noise, and in
+#: English.
+_PROCESS_TALK = re.compile(
+    r"\b(tool errors?|due to (an? )?(tool|technical) (error|issue|failure)s?"
+    r"|could not be (retrieved|fetched|found|accessed|obtained|determined)"
+    r"|(was|were) (unavailable|not available)"
+    r"|unable to (retrieve|fetch|find|access|obtain)"
+    r"|(search|api|tool) (failed|error)"
+    r"|no (results|data) (was|were) (found|returned))\b",
+    re.IGNORECASE,
+)
+
+_SENTENCE = re.compile(r"(?<=[.!?])\s+")
+
+
+def strip_process_talk(report: TopicReport) -> tuple[TopicReport, list[str]]:
+    """Remove what the agents said about their own run from farmer-facing text.
+
+    Deterministic, like the source gate: asking the model not to narrate its
+    tool failures is in the instructions too, and it does it anyway.
+    """
+    removed: list[str] = []
+
+    def clean(text: str) -> str:
+        kept = []
+        for sentence in _SENTENCE.split(text.strip()):
+            if sentence and _PROCESS_TALK.search(sentence):
+                removed.append(f"Dropped run narration: {sentence}")
+            elif sentence:
+                kept.append(sentence)
+        return " ".join(kept)
+
+    def keep(items: list[str]) -> list[str]:
+        out = []
+        for item in items:
+            if _PROCESS_TALK.search(item):
+                removed.append(f"Dropped run narration: {item}")
+            else:
+                out.append(item)
+        return out
+
+    report.overview = clean(report.overview)
+    report.market_notes = clean(report.market_notes)
+    report.key_facts = keep(report.key_facts)
+    report.new_developments = keep(report.new_developments)
+    return report, removed
 
 
 def strip_unsourced_claims(report: TopicReport) -> tuple[TopicReport, list[str]]:

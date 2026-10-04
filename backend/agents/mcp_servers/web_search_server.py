@@ -17,17 +17,15 @@ def web_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
     a title, url, and short snippet. Use this to discover current sources
     (news, government portals, agricultural extension sites) before
     fetching any of them in full."""
-    from ddgs import DDGS  # imported lazily so a missing/broken install of
-    # this optional dependency doesn't prevent the rest of the app from
-    # importing this module.
+    # Imported lazily so a missing or broken install of `ddgs` doesn't stop
+    # the rest of the app importing this module.
+    from .search_backends import search
 
     max_results = max(1, min(int(max_results), 10))
     try:
-        # `timeout` is per HTTP request, and ddgs tries several search backends
-        # in turn, so the worst case is a multiple of this rather than this.
-        # Kept modest for that reason: the caller's MCP session timeout is the
-        # only other thing standing between a wedged backend and a lost topic.
-        raw_results = DDGS(timeout=8).text(query, max_results=max_results)
+        # An explicit engine order with a time budget, not ddgs's own
+        # rotation — see `search_backends.py` for what AWS addresses get back.
+        raw_results = search(query, max_results)
     except Exception as exc:
         return [{"error": f"Web search failed: {exc}"}]
 
