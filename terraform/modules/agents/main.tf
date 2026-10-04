@@ -127,9 +127,10 @@ resource "aws_lambda_function" "agents" {
   timeout     = 900
   memory_size = 2048
 
-  # One sweep at a time. The pipeline already de-duplicates topics, but two
-  # concurrent sweeps would still bill Bedrock for the same research twice.
-  reserved_concurrent_executions = 1
+  # No reserved concurrency. Reserving even one execution fails on an account
+  # still at Lambda's starting quota of 10, because AWS keeps 10 unreserved.
+  # Overlap is prevented instead by the schedule (every 30 min) against a
+  # 15-minute timeout, and by not retrying a failed sweep (below).
 
   environment {
     variables = {
@@ -172,4 +173,13 @@ resource "aws_lambda_permission" "events" {
   function_name = aws_lambda_function.agents.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.sweep.arn
+}
+
+# EventBridge invokes asynchronously, and Lambda would retry a failed sweep
+# twice — three runs of the same research, billed three times. The next
+# scheduled sweep picks up whatever this one missed.
+resource "aws_lambda_function_event_invoke_config" "agents" {
+  function_name                = aws_lambda_function.agents.function_name
+  maximum_retry_attempts       = 0
+  maximum_event_age_in_seconds = 1800
 }

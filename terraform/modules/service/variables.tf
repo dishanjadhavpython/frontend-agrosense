@@ -44,6 +44,10 @@ variable "health_start_period" {
   description = "Seconds a new task has before failed health checks count (model loading)."
   type        = number
   default     = 60
+  validation {
+    condition     = var.health_start_period >= 0 && var.health_start_period <= 300
+    error_message = "ECS allows a health-check start period of 0-300 seconds."
+  }
 }
 
 variable "target_group_arn" {

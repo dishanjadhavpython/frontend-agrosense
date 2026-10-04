@@ -217,11 +217,11 @@ module "engine" {
   discovery_name     = "engine"
   log_retention_days = var.log_retention_days
 
-  # The fitted pipeline ships in the image; if its cache key no longer matches
-  # the code, the engine refits on boot, which takes minutes — hence the
-  # long start period rather than a crash loop.
+  # The fitted pipeline is built into the image (the engine's Dockerfile fits
+  # it and smoke-tests a recommendation), so the engine loads it in seconds.
+  # 300 s is ECS's ceiling for a start period, and ample.
   health_command      = ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=5)\" || exit 1"]
-  health_start_period = 900
+  health_start_period = 300
 
   environment_variables = {
     # The serving soil classifier's confusion matrix, copied into the image by
@@ -236,6 +236,11 @@ module "engine" {
 
 module "web" {
   source = "./modules/service"
+
+  # The service attaches to the target group, which ECS accepts only once a
+  # listener rule links it to the load balancer — and that rule lives in
+  # platform. Without this the service can be created first and is refused.
+  depends_on = [module.platform]
 
   name          = "web"
   name_prefix   = local.name_prefix
