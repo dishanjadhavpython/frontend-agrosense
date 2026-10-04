@@ -830,7 +830,7 @@ Below 0.50 the classifier is right less than half the time, so the interface mar
 
 ### B. Card reading
 
-The three fixture cards are read to 12 of 12 parameters from their PDFs, and to 12 of 12 from a high-resolution photograph only when rows are merged across OCR passes (Table V); a full card read takes 3.2 s on warm services. The one known OCR misread that is plausible and in range (nitrogen 945.15 for 245.15) is the reason confirmation is mandatory (Section V-A-3).
+The three fixture cards are read to 12 of 12 parameters from their PDFs, and to 12 of 12 from a high-resolution photograph only when rows are merged across OCR passes (Table V); a full card read takes 3.2 s on warm services. The one known OCR misread that is plausible and in range (nitrogen 945.15 for 245.15) is the reason confirmation is mandatory (Section V-A-3). OCR quality also depends on the Tesseract build: rendered at 150 and 200 DPI the card reads 12 of 12 correctly in the deployed container, but at 120 DPI — below any phone photograph — the container's Tesseract reads copper 2.47 as 9.47, a value that passes every plausibility bound, while a different build of the same engine reads it correctly. The tests therefore run inside the shipped image.
 
 ### C. Crop and fertilizer models (card-only path)
 
