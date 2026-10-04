@@ -20,10 +20,10 @@ export function SiteFooter() {
     {
       heading: mr ? "उत्पादन" : "Product",
       links: [
-        { label: t("navDashboard"), href: "/dashboard" },
-        { label: t("navSoilScan"), href: "/soil" },
-        { label: t("navMarket"), href: "/market" },
-        { label: t("navReports"), href: "/reports" },
+        { label: t("secUpload"), href: "/#upload" },
+        { label: mr ? "माती" : "Soil", href: "/#soils" },
+        { label: mr ? "पिकं" : "Crops", href: "/#crops" },
+        { label: mr ? "खतं" : "Fertilizer", href: "/#fertilizers" },
       ],
     },
     {
@@ -169,7 +169,7 @@ function CloseBand() {
             : "Share your Soil Health Card. We'll take it from there."}
         </p>
         <ButtonLink
-          href="/soil"
+          href="/#upload"
           variant="onNight"
           className="mt-8 px-7 dark:bg-on-light dark:text-leaf-5 dark:hover:bg-on-light-soft"
         >

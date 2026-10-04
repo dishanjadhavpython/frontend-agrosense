@@ -68,10 +68,10 @@ export function Hero() {
             {...rise(0.26)}
             className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3"
           >
-            <ButtonLink href="/soil" variant="primary" className="px-7">
+            <ButtonLink href="/#upload" variant="primary" className="px-7">
               {t("actTestSoil")}
             </ButtonLink>
-            <ButtonLink href="/soil?sample=1" variant="quiet">
+            <ButtonLink href="/#reading" variant="quiet">
               {t("actTrySample")} →
             </ButtonLink>
           </motion.div>

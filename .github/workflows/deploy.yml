@@ -232,17 +232,25 @@ jobs:
           echo "Site: $site"
           # A new CloudFront distribution takes a few minutes to answer.
           for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' "$site/api/health" || true)
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$site/api/health" || true)
             [ "$code" = 200 ] && break
             sleep 15
           done
           [ "$code" = 200 ] || { echo "web /api/health answered $code"; exit 1; }
           # Through the web app to the engine, over Service Connect.
-          meta=$(curl -s -o /dev/null -w '%{http_code}' "$site/api/recommend/meta")
+          meta=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$site/api/recommend/meta" || true)
           [ "$meta" = 200 ] || { echo "/api/recommend/meta answered $meta"; exit 1; }
-          # The origin itself must refuse anything that did not come through CloudFront.
-          origin=$(curl -s -o /dev/null -w '%{http_code}' "http://$(terraform output -raw alb_dns_name)/api/health")
-          [ "$origin" = 403 ] || { echo "load balancer answered $origin without the origin header"; exit 1; }
+          # The origin itself must refuse anything that did not come through
+          # CloudFront. From a runner it normally never answers at all — the
+          # security group admits only CloudFront's address ranges, so the
+          # connection is dropped (000). A 403 means that lock was bypassed and
+          # the listener's origin-header rule caught it. Anything else is open.
+          origin=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 20 \
+            "http://$(terraform output -raw alb_dns_name)/api/health" || true)
+          case "$origin" in
+            000|403) ;;
+            *) echo "load balancer answered $origin to a direct request"; exit 1 ;;
+          esac
           echo "### Deployed $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "$site" >> "$GITHUB_STEP_SUMMARY"
